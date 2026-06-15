@@ -1,18 +1,24 @@
 import {
   StandardMaterial,
   Color3,
+  Vector3,
+  TransformNode,
   type Light,
   type Scene,
   type AbstractMesh,
 } from "@babylonjs/core";
 import type { IRoom, DoorDefinition } from "./IRoom";
+import type { IInteractable } from "../engine/IInteractable";
 
 export abstract class RoomBase implements IRoom {
   abstract readonly id: string;
   abstract readonly doors: DoorDefinition[];
+  abstract readonly spawnPoint: Vector3;
 
-  protected meshes: AbstractMesh[] = [];
-  protected lights: Light[]        = [];
+  readonly interactables: IInteractable[]  = [];
+  protected meshes: AbstractMesh[]         = [];
+  protected lights: Light[]               = [];
+  protected nodes: TransformNode[]        = [];
 
   async load(scene: Scene): Promise<void> {
     await this.buildGeometry(scene);
@@ -21,8 +27,10 @@ export abstract class RoomBase implements IRoom {
   unload(): void {
     for (const m of this.meshes) m.dispose();
     for (const l of this.lights) l.dispose();
+    for (const n of this.nodes)  n.dispose();
     this.meshes = [];
     this.lights = [];
+    this.nodes  = [];
   }
 
   protected abstract buildGeometry(scene: Scene): Promise<void>;
@@ -38,6 +46,12 @@ export abstract class RoomBase implements IRoom {
   protected prop<T extends AbstractMesh>(mesh: T): T {
     this.meshes.push(mesh);
     return mesh;
+  }
+
+  /** TransformNode registrieren — wird beim unload() entfernt. */
+  protected trackNode<T extends TransformNode>(node: T): T {
+    this.nodes.push(node);
+    return node;
   }
 
   /** Lichtquelle registrieren — wird beim unload() entfernt. */

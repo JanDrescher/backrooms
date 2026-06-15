@@ -6,6 +6,7 @@ import {
   Color3,
   UniversalCamera,
 } from "@babylonjs/core";
+import type { IInteractable } from "./IInteractable";
 import type { IRoom } from "../rooms/IRoom";
 
 // Augenhöhe in Metern
@@ -67,6 +68,25 @@ export class Game {
     this.scene.registerAfterRender(() => {
       this.camera.position.y = EYE_HEIGHT;
     });
+
+    window.addEventListener("keydown", (e) => {
+      if (e.code === "KeyE") this.tryInteract();
+    });
+  }
+
+  private tryInteract(): void {
+    const interactables = this.currentRoom?.interactables ?? [];
+    const pos = this.camera.position;
+    let nearest: IInteractable | null = null;
+    let nearestDist = Infinity;
+    for (const i of interactables) {
+      const d = Vector3.Distance(pos, i.position);
+      if (d <= i.interactRange && d < nearestDist) {
+        nearest = i;
+        nearestDist = d;
+      }
+    }
+    nearest?.interact(pos);
   }
 
   focusCanvas(): void {
@@ -77,8 +97,9 @@ export class Game {
     if (this.currentRoom) this.currentRoom.unload();
     this.currentRoom = room;
     await room.load(this.scene);
-    this.camera.position = new Vector3(0, EYE_HEIGHT, 0);
-    this.camera.setTarget(new Vector3(0, EYE_HEIGHT, -1));
+    const sp = room.spawnPoint;
+    this.camera.position = new Vector3(sp.x, EYE_HEIGHT, sp.z);
+    this.camera.setTarget(new Vector3(sp.x, EYE_HEIGHT, sp.z - 1));
   }
 
   getScene(): Scene {
