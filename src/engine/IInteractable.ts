@@ -1,7 +1,7 @@
 import type { Vector3 } from "@babylonjs/core";
 
 export interface IInteractable {
-  readonly position: Vector3;     // Weltposition für Näherungsprüfung
-  readonly interactRange: number; // Reichweite in Metern
+  position: Vector3;              // Weltposition für Näherungsprüfung (mutable für worldOffset)
+  readonly interactRange: number;
   interact(playerPos: Vector3): void;
 }

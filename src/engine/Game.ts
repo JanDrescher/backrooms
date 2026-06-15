@@ -19,7 +19,7 @@ export class Game {
   private engine: Engine;
   private scene: Scene;
   private camera!: UniversalCamera;
-  private currentRoom: IRoom | null = null;
+  private rooms: IRoom[] = [];
 
   constructor(canvas: HTMLCanvasElement) {
     this.engine = new Engine(canvas, true, { preserveDrawingBuffer: true });
@@ -52,7 +52,7 @@ export class Game {
     this.camera.keysLeft  = [65]; // A
     this.camera.keysRight = [68]; // D
 
-    this.camera.speed              = 0.5;
+    this.camera.speed              = 1.0;
     this.camera.angularSensibility = 2000;
     this.camera.inertia            = 0;
     this.camera.minZ               = 0.1;
@@ -75,15 +75,16 @@ export class Game {
   }
 
   private tryInteract(): void {
-    const interactables = this.currentRoom?.interactables ?? [];
     const pos = this.camera.position;
     let nearest: IInteractable | null = null;
     let nearestDist = Infinity;
-    for (const i of interactables) {
-      const d = Vector3.Distance(pos, i.position);
-      if (d <= i.interactRange && d < nearestDist) {
-        nearest = i;
-        nearestDist = d;
+    for (const room of this.rooms) {
+      for (const i of room.interactables) {
+        const d = Vector3.Distance(pos, i.position);
+        if (d <= i.interactRange && d < nearestDist) {
+          nearest = i;
+          nearestDist = d;
+        }
       }
     }
     nearest?.interact(pos);
@@ -93,13 +94,31 @@ export class Game {
     (this.engine.getRenderingCanvas() as HTMLCanvasElement).focus();
   }
 
-  async loadRoom(room: IRoom): Promise<void> {
-    if (this.currentRoom) this.currentRoom.unload();
-    this.currentRoom = room;
-    await room.load(this.scene);
+  /** Alle Räume aus der Szene entfernen. */
+  clearRooms(): void {
+    for (const r of this.rooms) r.unload();
+    this.rooms = [];
+  }
+
+  /** Raum in die Szene laden (ohne bestehende Räume zu entfernen). */
+  async addRoom(room: IRoom, worldOffset = Vector3.Zero()): Promise<void> {
+    await room.load(this.scene, worldOffset);
+    this.rooms.push(room);
+  }
+
+  /** Kamera im Spawnpunkt eines bereits geladenen Raums positionieren. */
+  spawnAt(room: IRoom): void {
     const sp = room.spawnPoint;
-    this.camera.position = new Vector3(sp.x, EYE_HEIGHT, sp.z);
-    this.camera.setTarget(new Vector3(sp.x, EYE_HEIGHT, sp.z - 1));
+    const wo = room.worldOffset;
+    this.camera.position = new Vector3(sp.x + wo.x, EYE_HEIGHT, sp.z + wo.z);
+    this.camera.setTarget(new Vector3(sp.x + wo.x, EYE_HEIGHT, sp.z + wo.z - 1));
+  }
+
+  /** Shortcut: einzelnen Raum am Ursprung laden und darin spawnen. */
+  async loadRoom(room: IRoom): Promise<void> {
+    this.clearRooms();
+    await this.addRoom(room, Vector3.Zero());
+    this.spawnAt(room);
   }
 
   getScene(): Scene {
