@@ -12,12 +12,16 @@ export class CorridorRoom extends RoomBase {
   private readonly W = 3;
   private readonly D: number;
   private readonly H: number;
-  private readonly branchSide: "east" | "west" | null;
-  private readonly branchSeg: number;
+  private readonly branchSide: "east" | "west" | "both" | null;
+  private readonly branchSegE: number;  // segment-Index für Ostabzweig (W-Wand)
+  private readonly branchSegW: number;  // segment-Index für Westabzweig (E-Wand)
 
   constructor(id: string, opts: {
     D?: number; H?: number;
-    branchSide?: "east" | "west" | null; branchSeg?: number;
+    branchSide?: "east" | "west" | "both" | null;
+    branchSeg?: number;       // einheitlich für beide Seiten (für Kreuzungen)
+    branchSegEast?: number;
+    branchSegWest?: number;
   } = {}) {
     super();
     this.id = id;
@@ -27,36 +31,58 @@ export class CorridorRoom extends RoomBase {
     this.D = opts.D ?? depths[Math.floor(Math.random()  * depths.length)];
     this.H = opts.H ?? heights[Math.floor(Math.random() * heights.length)];
 
+    const numSegs = this.D / 3;
+
     if (opts.branchSide !== undefined) {
       this.branchSide = opts.branchSide;
-      this.branchSeg  = opts.branchSeg ?? 1;
-    } else if (this.D >= 12 && Math.random() < 0.6) {
-      this.branchSide = Math.random() < 0.5 ? "east" : "west";
-      const numSegs = this.D / 3;
-      this.branchSeg = 1 + Math.floor(Math.random() * (numSegs - 2));
+      if (opts.branchSide === "both") {
+        this.branchSegE = opts.branchSegEast ?? opts.branchSeg ?? 1;
+        this.branchSegW = opts.branchSegWest ?? opts.branchSeg ?? 1;
+      } else {
+        const seg = opts.branchSeg ?? 1;
+        this.branchSegE = seg;
+        this.branchSegW = seg;
+      }
+    } else if (numSegs >= 3 && Math.random() < 0.65) {
+      const maxIdx = numSegs - 2;  // gültige Segmente: [1 … numSegs-2]
+      if (numSegs >= 4 && Math.random() < 0.42) {
+        // Langer Korridor: zwei gegenüberliegende Abzweige an verschiedenen Segmenten
+        this.branchSide = "both";
+        const sA = 1 + Math.floor(Math.random() * maxIdx);
+        let   sB = sA;
+        while (sB === sA) sB = 1 + Math.floor(Math.random() * maxIdx);
+        this.branchSegE = sA;
+        this.branchSegW = sB;
+      } else {
+        this.branchSide = Math.random() < 0.5 ? "east" : "west";
+        const seg = 1 + Math.floor(Math.random() * maxIdx);
+        this.branchSegE = seg;
+        this.branchSegW = seg;
+      }
     } else {
       this.branchSide = null;
-      this.branchSeg  = -1;
+      this.branchSegE = -1;
+      this.branchSegW = -1;
     }
 
-    const sk = Math.floor(Math.random() * (this.D / 3));
+    const sk = Math.floor(Math.random() * numSegs);
     this.spawnPoint = new Vector3(0, 0, -this.D / 2 + 1.5 + sk * 3);
 
-    const { D, H, branchSide, branchSeg } = this;
+    const { D, H, branchSide, branchSegE, branchSegW } = this;
     this.doors = [
       { id: "north", position: new Vector3(0, H / 2, -D / 2), direction: new Vector3( 0, 0, -1) },
       { id: "south", position: new Vector3(0, H / 2,  D / 2), direction: new Vector3( 0, 0,  1) },
     ];
-    // Babylon.js LH: Kamera schaut in -Z (Norden) → visuell RECHTS = -X, visuell LINKS = +X
-    // Tür liegt an der Außenfläche der Wand (±(W/2+T)), analog zur Nord-Tür bei z=−D/2−T
-    if (branchSide === "east") {
+    // BJS LH: −X = visuell rechts (Osten), +X = visuell links (Westen)
+    if (branchSide === "east" || branchSide === "both") {
       this.doors.push({ id: "branch_east",
-        position:  new Vector3(-(this.W / 2 + T), H / 2, -D / 2 + branchSeg * 3 + 1.5),
-        direction: new Vector3(-1, 0, 0) }); // -X = visuell rechts (Osten)
-    } else if (branchSide === "west") {
+        position:  new Vector3(-(this.W / 2 + T), H / 2, -D / 2 + branchSegE * 3 + 1.5),
+        direction: new Vector3(-1, 0, 0) });
+    }
+    if (branchSide === "west" || branchSide === "both") {
       this.doors.push({ id: "branch_west",
-        position:  new Vector3( (this.W / 2 + T), H / 2, -D / 2 + branchSeg * 3 + 1.5),
-        direction: new Vector3( 1, 0, 0) }); // +X = visuell links (Westen)
+        position:  new Vector3( (this.W / 2 + T), H / 2, -D / 2 + branchSegW * 3 + 1.5),
+        direction: new Vector3( 1, 0, 0) });
     }
   }
 
@@ -68,23 +94,18 @@ export class CorridorRoom extends RoomBase {
     const bsMat    = this.mat(scene, "baseboard", new Color3(0.71, 0.69, 0.42));
     const cornMat  = this.mat(scene, "cornice",   new Color3(0.57, 0.56, 0.48));
 
-    // Teppich — skaliert auf die gesamte Bodenplatte (W+2T × D), kein Offset nötig
     const carpetTex = this.buildCarpetTexture(scene);
-    carpetTex.uScale = D / 3;             // U→Z (Tiefe), wie bei der Decke
-    carpetTex.vScale = (W + 2 * T) / 3;  // V→X (Breite)
+    carpetTex.uScale = D / 3;
+    carpetTex.vScale = (W + 2 * T) / 3;
     floorMat.diffuseTexture = carpetTex;
 
-    // Deckenplatten — U→Tiefe, V→Breite (−Y-Fläche: Achsen getauscht)
     const { diffuse: ceilDiff, bump: ceilBump } = this.buildCeilingTileTexture(scene);
-    ceilDiff.uScale = D;
-    ceilDiff.vScale = W;
-    ceilBump.uScale = D;
-    ceilBump.vScale = W;
+    ceilDiff.uScale = D; ceilDiff.vScale = W;
+    ceilBump.uScale = D; ceilBump.vScale = W;
     ceilMat.diffuseTexture = ceilDiff;
     ceilMat.bumpTexture    = ceilBump;
     ceilMat.bumpTexture.level = 0.35;
 
-    // Boden — W+2T breit (reicht unter die E/W-Wände)
     const floor = MeshBuilder.CreateBox(`${this.id}_floor`,
       { width: W + 2 * T, height: T, depth: D }, scene);
     floor.position.y = -T / 2;
@@ -97,7 +118,6 @@ export class CorridorRoom extends RoomBase {
     ceil.material   = ceilMat;
     this.track(ceil);
 
-    // E/W-Seitenwände
     this.buildSideWall(scene, "E",  W / 2 + T / 2,  W / 2, bsMat, cornMat);
     this.buildSideWall(scene, "W", -W / 2 - T / 2, -W / 2, bsMat, cornMat);
 
@@ -109,32 +129,31 @@ export class CorridorRoom extends RoomBase {
   private buildSideWall(
     scene:   Scene,
     side:    string,
-    wallX:   number, // Wandzentrum X
-    innerX:  number, // Wandinnenfläche X (für Leisten)
+    wallX:   number,
+    innerX:  number,
     bsMat:   StandardMaterial,
     cornMat: StandardMaterial,
   ): void {
-    const { D, H, branchSide, branchSeg } = this;
+    const { D, H, branchSide, branchSegE, branchSegW } = this;
     const wallH  = H + T;
     const BS_H   = 0.10, BS_D  = 0.04;
     const CORN_H = 0.08, CORN_D = 0.04;
-    // Leisten sitzen an der Innenfläche, ragen ins Rauminnere
     const bsX   = innerX > 0 ? innerX - BS_D   / 2 : innerX + BS_D   / 2;
     const cornX = innerX > 0 ? innerX - CORN_D / 2 : innerX + CORN_D / 2;
 
-    // "east" = visuell rechts = -X = W-Wand; "west" = visuell links = +X = E-Wand
-    const hasBranch = (side === "W" && branchSide === "east")
-                   || (side === "E" && branchSide === "west");
+    // W-Wand (−X) = Ostabzweig; E-Wand (+X) = Westabzweig
+    const isEastBranch = branchSide === "east" || branchSide === "both";
+    const isWestBranch = branchSide === "west" || branchSide === "both";
+    const hasBranch = (side === "W" && isEastBranch) || (side === "E" && isWestBranch);
+    const branchSeg = side === "W" ? branchSegE : branchSegW;
 
     const buildPanel = (panelId: string, depth: number, cz: number) => {
-      // ±X-Flächen: UV-Quirk — U→Höhe, V→Tiefe
       const wallMat = this.mat(scene, `wall_${panelId}`, Color3.White());
       wallMat.diffuseTexture = this.buildWallpaperTexture(
         scene, `wall_${panelId}`,
-        wallH / RoomBase.TILE_H,   // uScale = Höhenachse
-        depth / RoomBase.TILE_W,   // vScale = Tiefenachse
+        wallH / RoomBase.TILE_H,
+        depth / RoomBase.TILE_W,
       );
-
       const wall = MeshBuilder.CreateBox(`${this.id}_wall_${panelId}`,
         { width: T, height: wallH, depth }, scene);
       wall.position = new Vector3(wallX, wallH / 2, cz);
@@ -159,14 +178,9 @@ export class CorridorRoom extends RoomBase {
     } else {
       const leftLen  = branchSeg * 3;
       const rightLen = D - (branchSeg + 1) * 3;
-      if (leftLen > 0) {
-        buildPanel(`${side}_L`, leftLen, -D / 2 + leftLen / 2);
-      }
-      if (rightLen > 0) {
-        buildPanel(`${side}_R`, rightLen, D / 2 - rightLen / 2);
-      }
+      if (leftLen > 0) buildPanel(`${side}_L`, leftLen, -D / 2 + leftLen / 2);
+      if (rightLen > 0) buildPanel(`${side}_R`, rightLen, D / 2 - rightLen / 2);
 
-      // Sturz — schließt die T-hohe Deckenlücke über dem Wanddurchbruch
       const sturzZ = -D / 2 + branchSeg * 3 + 1.5;
       const sturz = MeshBuilder.CreateBox(`${this.id}_sturz_${side}`,
         { width: T, height: T, depth: 3 }, scene);
@@ -174,7 +188,6 @@ export class CorridorRoom extends RoomBase {
       sturz.material = bsMat;
       this.prop(sturz);
 
-      // Scheuerleiste + Deckenleiste an den Öffnungskanten (quer durch die Wandstärke)
       for (const [tag, jambZ, signZ] of [
         ["jS", sturzZ - 1.5, +1],
         ["jN", sturzZ + 1.5, -1],
