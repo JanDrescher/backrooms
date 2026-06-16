@@ -1,6 +1,7 @@
 import { MeshBuilder, StandardMaterial, PointLight, Color3, Vector3, Animation, TransformNode, type Scene } from "@babylonjs/core";
 import { RoomBase } from "./RoomBase";
 import type { DoorDefinition } from "./IRoom";
+import { playDoorSound } from "../audio/DoorSound";
 
 const T      = 0.2;
 const DOOR_W = 1.0;
@@ -286,10 +287,11 @@ export class PlaceholderRoom extends RoomBase {
     );
 
     let isOpen = false;
-    this.interactables.push({
+    const interactable = {
       position: interactRoomLocal,
       interactRange: 2.0,
       interact: (playerPos: Vector3) => {
+        playDoorSound(interactable.position.x, interactable.position.y, interactable.position.z);
         isOpen = !isOpen;
         let target = 0;
         if (isOpen) {
@@ -301,12 +303,13 @@ export class PlaceholderRoom extends RoomBase {
         }
         Animation.CreateAndStartAnimation(
           "doorSwing", hinge, "rotation.y",
-          60, 20,
+          60, 30,
           hinge.rotation.y, target,
           Animation.ANIMATIONLOOPMODE_CONSTANT,
         );
       },
-    });
+    };
+    this.interactables.push(interactable);
   }
 
   private buildBaseboards(
@@ -489,6 +492,7 @@ export class PlaceholderRoom extends RoomBase {
   private buildCeilingLamps(scene: Scene): void {
     const { W, D, H } = this;
     const LAMP_W = 0.8, LAMP_D = 0.8, LAMP_T = 0.04;
+    this.humLocalPos = new Vector3(-W / 2 + 1.5, H - LAMP_T / 2, -D / 2 + 1.5);
 
     const lampMat = new StandardMaterial(`${this.id}_mat_lamp`, scene);
     lampMat.emissiveColor   = new Color3(0.95, 0.92, 0.62);
@@ -497,17 +501,34 @@ export class PlaceholderRoom extends RoomBase {
     const rimMat = this.mat(scene, "lamp_rim", new Color3(0.18, 0.17, 0.14));
     rimMat.maxSimultaneousLights = 6;
 
+    const hasFlicker  = Math.random() < 0.20;
+    const flickerIx   = Math.floor(Math.random() * (W / 3));
+    const flickerIz   = Math.floor(Math.random() * (D / 3));
+
     for (let ix = 0; ix < W / 3; ix++) {
       for (let iz = 0; iz < D / 3; iz++) {
         const px  = -W / 2 + 1.5 + ix * 3;
         const pz  = -D / 2 + 1.5 + iz * 3;
         const idx = ix * (D / 3) + iz;
+        const isFlicker = hasFlicker && ix === flickerIx && iz === flickerIz;
+
+        let mat = lampMat;
+        if (isFlicker) {
+          mat = new StandardMaterial(`${this.id}_mat_flicker`, scene);
+          mat.emissiveColor   = new Color3(0.95, 0.92, 0.62);
+          mat.disableLighting = true;
+        }
 
         const panel = MeshBuilder.CreateBox(`${this.id}_lamp_panel_${idx}`,
           { width: LAMP_W, height: LAMP_T, depth: LAMP_D }, scene);
         panel.position = new Vector3(px, H - LAMP_T / 2, pz);
-        panel.material = lampMat;
+        panel.material = mat;
         this.prop(panel);
+
+        if (isFlicker) {
+          this.flickerLampMesh = panel;
+          this.flickerLocalPos = new Vector3(px, H - LAMP_T / 2, pz);
+        }
 
         const rimT = 0.025, rimH = 0.05;
         for (const r of [

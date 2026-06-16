@@ -8,6 +8,7 @@ import {
 } from "@babylonjs/core";
 import type { IInteractable } from "./IInteractable";
 import type { IRoom } from "../rooms/IRoom";
+import { updateAudioListener } from "../audio/NeonHum";
 
 // Augenhöhe in Metern
 const EYE_HEIGHT = 1.7;
@@ -67,6 +68,12 @@ export class Game {
     // Y-Position nach jedem Frame einrasten — kein applyGravity nötig
     this.scene.registerAfterRender(() => {
       this.camera.position.y = EYE_HEIGHT;
+      // Spatial-Audio-Listener synchron zur Kamera halten
+      const p = this.camera.position;
+      const t = this.camera.target;
+      const dx = t.x - p.x, dy = t.y - p.y, dz = t.z - p.z;
+      const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
+      updateAudioListener(p.x, p.y, p.z, dx / len, dy / len, dz / len);
     });
 
     window.addEventListener("keydown", (e) => {

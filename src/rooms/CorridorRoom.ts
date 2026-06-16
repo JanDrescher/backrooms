@@ -201,6 +201,8 @@ export class CorridorRoom extends RoomBase {
   private buildCeilingLamps(scene: Scene): void {
     const { D, H } = this;
     const LAMP_W = 0.6, LAMP_D = 0.6, LAMP_T = 0.04;
+    const midIz = Math.floor(D / 3 / 2);
+    this.humLocalPos = new Vector3(0, H - LAMP_T / 2, -D / 2 + 1.5 + midIz * 3);
 
     const lampMat = new StandardMaterial(`${this.id}_mat_lamp`, scene);
     lampMat.emissiveColor   = new Color3(0.95, 0.92, 0.62);
@@ -208,14 +210,30 @@ export class CorridorRoom extends RoomBase {
 
     const rimMat = this.mat(scene, "lamp_rim", new Color3(0.18, 0.17, 0.14));
 
+    const hasFlicker  = Math.random() < 0.20;
+    const flickerIz   = Math.floor(Math.random() * (D / 3));
+
     for (let iz = 0; iz < D / 3; iz++) {
       const pz = -D / 2 + 1.5 + iz * 3;
+      const isFlicker = hasFlicker && iz === flickerIz;
+
+      let mat = lampMat;
+      if (isFlicker) {
+        mat = new StandardMaterial(`${this.id}_mat_flicker`, scene);
+        mat.emissiveColor   = new Color3(0.95, 0.92, 0.62);
+        mat.disableLighting = true;
+      }
 
       const panel = MeshBuilder.CreateBox(`${this.id}_lamp_panel_${iz}`,
         { width: LAMP_W, height: LAMP_T, depth: LAMP_D }, scene);
       panel.position = new Vector3(0, H - LAMP_T / 2, pz);
-      panel.material = lampMat;
+      panel.material = mat;
       this.prop(panel);
+
+      if (isFlicker) {
+        this.flickerLampMesh = panel;
+        this.flickerLocalPos = new Vector3(0, H - LAMP_T / 2, pz);
+      }
 
       const rimT = 0.025, rimH = 0.05;
       for (const r of [

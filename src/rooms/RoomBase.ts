@@ -13,6 +13,8 @@ import {
 } from "@babylonjs/core";
 import type { IRoom, DoorDefinition } from "./IRoom";
 import type { IInteractable } from "../engine/IInteractable";
+import { NeonHum } from "../audio/NeonHum";
+import { FlickerEffect } from "../effects/FlickerLamp";
 
 export abstract class RoomBase implements IRoom {
   abstract readonly id: string;
@@ -21,9 +23,14 @@ export abstract class RoomBase implements IRoom {
 
   readonly interactables: IInteractable[]  = [];
   worldOffset: Vector3                     = Vector3.Zero();
-  protected meshes: AbstractMesh[]         = [];
-  protected lights: Light[]               = [];
-  protected nodes: TransformNode[]        = [];
+  protected meshes:       AbstractMesh[]   = [];
+  protected lights:       Light[]          = [];
+  protected nodes:        TransformNode[]  = [];
+  protected humLocalPos:     Vector3 | null      = null;
+  protected flickerLocalPos: Vector3 | null      = null;
+  protected flickerLampMesh: AbstractMesh | null = null;
+  private   neonHum:         NeonHum | null      = null;
+  private   flickerEffect:   FlickerEffect | null = null;
 
   // Physikalische Kachelgröße Wandtapete — geteilt von allen Raumtypen
   protected static readonly TILE_W = 0.175; // m horizontal
@@ -65,6 +72,32 @@ export abstract class RoomBase implements IRoom {
     for (const l of this.lights) {
       if (l instanceof PointLight) l.includedOnlyMeshes = [...this.meshes];
     }
+
+    // NeonHum: Brumm-Quelle an einer Lampe (Weltkoordinaten nach Rotation + Offset)
+    if (this.humLocalPos) {
+      let wp = this.humLocalPos.clone();
+      if (rotationY !== 0) wp = RoomBase.rotY(wp, rotationY);
+      wp.addInPlace(worldOffset);
+      this.neonHum = new NeonHum(wp.x, wp.y, wp.z);
+      this.neonHum.start();
+    }
+
+    // FlickerEffect: flackernde Lampe + nächstgelegenes PointLight
+    if (this.flickerLampMesh && this.flickerLocalPos) {
+      let wp = this.flickerLocalPos.clone();
+      if (rotationY !== 0) wp = RoomBase.rotY(wp, rotationY);
+      wp.addInPlace(worldOffset);
+
+      let nearest: PointLight | null = null;
+      let nearestDist = Infinity;
+      for (const l of this.lights) {
+        if (l instanceof PointLight) {
+          const d = Vector3.Distance(l.position, wp);
+          if (d < nearestDist) { nearestDist = d; nearest = l; }
+        }
+      }
+      if (nearest) this.flickerEffect = new FlickerEffect(this.flickerLampMesh, nearest, wp);
+    }
   }
 
   // Rotiert einen Vektor um die Y-Achse (LH: x'=x·c−z·s, z'=x·s+z·c)
@@ -74,6 +107,10 @@ export abstract class RoomBase implements IRoom {
   }
 
   unload(): void {
+    this.neonHum?.stop();
+    this.neonHum = null;
+    this.flickerEffect?.dispose();
+    this.flickerEffect = null;
     for (const m of this.meshes) m.dispose();
     for (const l of this.lights) l.dispose();
     for (const n of this.nodes)  n.dispose();
