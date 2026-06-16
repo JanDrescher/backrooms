@@ -14,8 +14,8 @@ export interface IRoom {
   readonly interactables: IInteractable[];
   readonly worldOffset: Vector3;
 
-  /** Baut die Raumgeometrie in die Szene, optional mit Weltversatz. */
-  load(scene: Scene, worldOffset?: Vector3): Promise<void>;
+  /** Baut die Raumgeometrie in die Szene, optional mit Weltversatz und Y-Rotation. */
+  load(scene: Scene, worldOffset?: Vector3, rotationY?: number): Promise<void>;
 
   /** Räumt alle Meshes des Raums aus der Szene. */
   unload(): void;

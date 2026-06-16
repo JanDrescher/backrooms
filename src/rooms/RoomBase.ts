@@ -29,18 +29,48 @@ export abstract class RoomBase implements IRoom {
   protected static readonly TILE_W = 0.175; // m horizontal
   protected static readonly TILE_H = 0.386; // m vertikal
 
-  async load(scene: Scene, worldOffset = Vector3.Zero()): Promise<void> {
+  async load(scene: Scene, worldOffset = Vector3.Zero(), rotationY = 0): Promise<void> {
     this.worldOffset = worldOffset;
     await this.buildGeometry(scene);
 
-    // Welt-Versatz auf alle root-level Objekte anwenden (Kinder erben vom Parent)
+    // Pivot-TransformNode für Rotation + Versatz aller Meshes/Nodes.
+    // Babylon.js wendet seine eigene Rotationskonvention intern an —
+    // kein manuelles mesh.rotation.y nötig.
+    const pivot = new TransformNode(`${this.id}_pivot`, scene);
+    pivot.rotation.y = rotationY;
+    pivot.position   = worldOffset.clone();
+    this.nodes.push(pivot);
+
+    for (const m of this.meshes) if (!m.parent) m.parent = pivot;
+    for (const n of this.nodes)  if (n !== pivot && !n.parent) n.parent = pivot;
+
+    // Türen, Lichter, Interactables, SpawnPoint manuell transformieren
+    // (keine Babylon-Szenenobjekte mit Parent-Transform-Unterstützung)
+    if (rotationY !== 0) {
+      for (const l of this.lights)        if (l instanceof PointLight) l.position = RoomBase.rotY(l.position, rotationY);
+      for (const i of this.interactables) i.position = RoomBase.rotY(i.position, rotationY);
+      for (const d of this.doors)         { d.position = RoomBase.rotY(d.position, rotationY); d.direction = RoomBase.rotY(d.direction, rotationY); }
+      const rsp = RoomBase.rotY(this.spawnPoint, rotationY);
+      this.spawnPoint.x = rsp.x;
+      this.spawnPoint.z = rsp.z;
+    }
     if (worldOffset.x !== 0 || worldOffset.y !== 0 || worldOffset.z !== 0) {
-      for (const m of this.meshes)        if (!m.parent)    m.position.addInPlace(worldOffset);
       for (const l of this.lights)        if (l instanceof PointLight) l.position.addInPlace(worldOffset);
-      for (const n of this.nodes)         if (!n.parent)    n.position.addInPlace(worldOffset);
       for (const i of this.interactables) i.position.addInPlace(worldOffset);
       for (const d of this.doors)         d.position.addInPlace(worldOffset);
     }
+
+    // PointLichter auf Raum-eigene Meshes beschränken — hält maxSimultaneousLights klein,
+    // egal wie viele Räume im Komplex existieren.
+    for (const l of this.lights) {
+      if (l instanceof PointLight) l.includedOnlyMeshes = [...this.meshes];
+    }
+  }
+
+  // Rotiert einen Vektor um die Y-Achse (LH: x'=x·c−z·s, z'=x·s+z·c)
+  protected static rotY(v: Vector3, a: number): Vector3 {
+    const c = Math.cos(a), s = Math.sin(a);
+    return new Vector3(v.x * c - v.z * s, v.y, v.x * s + v.z * c);
   }
 
   unload(): void {
@@ -287,7 +317,7 @@ export abstract class RoomBase implements IRoom {
     mat.diffuseTexture = tex;
     mat.useAlphaFromDiffuseTexture = true;
     mat.specularColor = Color3.Black();
-    mat.maxSimultaneousLights = 5;
+    mat.maxSimultaneousLights = 6;
 
     const mesh = MeshBuilder.CreateBox(`${this.id}_floor_grime`,
       { width, height: 0.001, depth }, scene);

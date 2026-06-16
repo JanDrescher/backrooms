@@ -2,6 +2,7 @@ import { Vector3 } from "@babylonjs/core";
 import { Game } from "./engine/Game";
 import { PlaceholderRoom } from "./rooms/PlaceholderRoom";
 import { CorridorRoom } from "./rooms/CorridorRoom";
+import { computeConnection } from "./world/LevelBuilder";
 
 const canvas  = document.getElementById("renderCanvas") as HTMLCanvasElement;
 const overlay = document.getElementById("overlay") as HTMLDivElement;
@@ -11,42 +12,63 @@ overlay.addEventListener("click", async () => {
   overlay.style.display = "none";
   await canvas.requestPointerLock();
   game.focusCanvas();
-
   game.clearRooms();
 
-  // Startrum: PlaceholderRoom am Weltursrpung
-  const sizes   = [6, 9, 12];
-  const heights = [2.5, 2.8, 3.0, 3.2];
-  const w = sizes[Math.floor(Math.random() * sizes.length)];
-  const d = sizes[Math.floor(Math.random() * sizes.length)];
-  const h = heights[Math.floor(Math.random() * heights.length)];
-  const placeholder = new PlaceholderRoom("room_placeholder", w, d, h);
-  await game.addRoom(placeholder, Vector3.Zero());
+  // ── Komplex-Layout ────────────────────────────────────────────────
+  //
+  //   [P0]  Startroom (6×6)
+  //     |
+  //   [C1]  N-S Korridor, Ostabzweigung bei Segment 1
+  //     |  \
+  //   [C2]  [C3] O-W Korridor (nach Osten)
+  //     |         \
+  //   [P2]       [P1] Endraum (6×6)
+  //
+  // ─────────────────────────────────────────────────────────────────
 
-  // CorridorRoom anschließen: dessen "south"-Öffnung deckt sich mit
-  // der "north"-Tür des Placeholders (Positionen jetzt in Weltkoordinaten)
-  const corridor = new CorridorRoom("corridor_1");
-  const northDoor = placeholder.doors.find(dd => dd.id === "north")!;
-  const southDoor = corridor.doors.find(dd => dd.id === "south")!;
-  // Placeholder ist am Ursprung → northDoor.position ist bereits Weltkoord.
-  const corridorOffset = new Vector3(
-    northDoor.position.x - southDoor.position.x,
-    0,
-    northDoor.position.z - southDoor.position.z,
+  const p0 = new PlaceholderRoom("p0", 6, 6, 2.8, "north");
+  await game.addRoom(p0);
+
+  const c1 = new CorridorRoom("c1", { D: 9, H: 2.8, branchSide: "east", branchSeg: 1 });
+  const { offset: c1Off, rotation: c1Rot } = computeConnection(
+    p0.doors.find(d => d.id === "north")!,
+    c1.doors.find(d => d.id === "south")!,
   );
-  await game.addRoom(corridor, corridorOffset);
+  await game.addRoom(c1, c1Off, c1Rot);
 
-  // Spieler im PlaceholderRoom spawnen
-  game.spawnAt(placeholder);
-
-  console.log(
-    `PlaceholderRoom ${w}×${d}×${h}m | ` +
-    `CorridorRoom offset z=${corridorOffset.z.toFixed(2)}`
+  const c2 = new CorridorRoom("c2", { D: 9, H: 2.8, branchSide: null });
+  const { offset: c2Off, rotation: c2Rot } = computeConnection(
+    c1.doors.find(d => d.id === "north")!,
+    c2.doors.find(d => d.id === "south")!,
   );
+  await game.addRoom(c2, c2Off, c2Rot);
+
+  // P2: Südtür → kein Rotation nötig
+  const p2 = new PlaceholderRoom("p2", 6, 6, 2.8, "south");
+  const { offset: p2Off, rotation: p2Rot } = computeConnection(
+    c2.doors.find(d => d.id === "north")!,
+    p2.doors.find(d => d.id === "south")!,
+  );
+  await game.addRoom(p2, p2Off, p2Rot);
+
+  const c3 = new CorridorRoom("c3", { D: 9, H: 2.8, branchSide: null });
+  const { offset: c3Off, rotation: c3Rot } = computeConnection(
+    c1.doors.find(d => d.id === "branch_east")!,
+    c3.doors.find(d => d.id === "south")!,
+  );
+  await game.addRoom(c3, c3Off, c3Rot);
+
+  // P1: Westtür (visuell links = +X-Wand) → kein Rotation nötig
+  const p1 = new PlaceholderRoom("p1", 6, 6, 2.8, "west");
+  const { offset: p1Off, rotation: p1Rot } = computeConnection(
+    c3.doors.find(d => d.id === "north")!,
+    p1.doors.find(d => d.id === "west")!,
+  );
+  await game.addRoom(p1, p1Off, p1Rot);
+
+  game.spawnAt(p0);
 });
 
 document.addEventListener("pointerlockchange", () => {
-  if (!document.pointerLockElement) {
-    overlay.style.display = "flex";
-  }
+  if (!document.pointerLockElement) overlay.style.display = "flex";
 });

@@ -11,18 +11,26 @@ export class CorridorRoom extends RoomBase {
 
   private readonly W = 3;
   private readonly D: number;
-  private readonly H = 2.8;
+  private readonly H: number;
   private readonly branchSide: "east" | "west" | null;
   private readonly branchSeg: number;
 
-  constructor(id: string) {
+  constructor(id: string, opts: {
+    D?: number; H?: number;
+    branchSide?: "east" | "west" | null; branchSeg?: number;
+  } = {}) {
     super();
     this.id = id;
 
-    const depths = [9, 12, 15] as const;
-    this.D = depths[Math.floor(Math.random() * depths.length)];
+    const depths  = [9, 12, 15] as const;
+    const heights = [2.5, 2.8, 3.0, 3.2] as const;
+    this.D = opts.D ?? depths[Math.floor(Math.random()  * depths.length)];
+    this.H = opts.H ?? heights[Math.floor(Math.random() * heights.length)];
 
-    if (this.D >= 12 && Math.random() < 0.6) {
+    if (opts.branchSide !== undefined) {
+      this.branchSide = opts.branchSide;
+      this.branchSeg  = opts.branchSeg ?? 1;
+    } else if (this.D >= 12 && Math.random() < 0.6) {
       this.branchSide = Math.random() < 0.5 ? "east" : "west";
       const numSegs = this.D / 3;
       this.branchSeg = 1 + Math.floor(Math.random() * (numSegs - 2));
@@ -39,14 +47,16 @@ export class CorridorRoom extends RoomBase {
       { id: "north", position: new Vector3(0, H / 2, -D / 2), direction: new Vector3( 0, 0, -1) },
       { id: "south", position: new Vector3(0, H / 2,  D / 2), direction: new Vector3( 0, 0,  1) },
     ];
+    // Babylon.js LH: Kamera schaut in -Z (Norden) → visuell RECHTS = -X, visuell LINKS = +X
+    // Tür liegt an der Außenfläche der Wand (±(W/2+T)), analog zur Nord-Tür bei z=−D/2−T
     if (branchSide === "east") {
       this.doors.push({ id: "branch_east",
-        position:  new Vector3( this.W / 2, H / 2, -D / 2 + branchSeg * 3 + 1.5),
-        direction: new Vector3( 1, 0, 0) });
+        position:  new Vector3(-(this.W / 2 + T), H / 2, -D / 2 + branchSeg * 3 + 1.5),
+        direction: new Vector3(-1, 0, 0) }); // -X = visuell rechts (Osten)
     } else if (branchSide === "west") {
       this.doors.push({ id: "branch_west",
-        position:  new Vector3(-this.W / 2, H / 2, -D / 2 + branchSeg * 3 + 1.5),
-        direction: new Vector3(-1, 0, 0) });
+        position:  new Vector3( (this.W / 2 + T), H / 2, -D / 2 + branchSeg * 3 + 1.5),
+        direction: new Vector3( 1, 0, 0) }); // +X = visuell links (Westen)
     }
   }
 
@@ -112,8 +122,9 @@ export class CorridorRoom extends RoomBase {
     const bsX   = innerX > 0 ? innerX - BS_D   / 2 : innerX + BS_D   / 2;
     const cornX = innerX > 0 ? innerX - CORN_D / 2 : innerX + CORN_D / 2;
 
-    const hasBranch = (side === "E" && branchSide === "east")
-                   || (side === "W" && branchSide === "west");
+    // "east" = visuell rechts = -X = W-Wand; "west" = visuell links = +X = E-Wand
+    const hasBranch = (side === "W" && branchSide === "east")
+                   || (side === "E" && branchSide === "west");
 
     const buildPanel = (panelId: string, depth: number, cz: number) => {
       // ±X-Flächen: UV-Quirk — U→Höhe, V→Tiefe
@@ -162,6 +173,28 @@ export class CorridorRoom extends RoomBase {
       sturz.position = new Vector3(wallX, H + T / 2, sturzZ);
       sturz.material = bsMat;
       this.prop(sturz);
+
+      // Scheuerleiste + Deckenleiste an den Öffnungskanten (quer durch die Wandstärke)
+      for (const [tag, jambZ, signZ] of [
+        ["jS", sturzZ - 1.5, +1],
+        ["jN", sturzZ + 1.5, -1],
+      ] as const) {
+        const sign  = innerX > 0 ? 1 : -1;
+        const bsJX  = wallX - sign * BS_D   / 2;
+        const cornJX = wallX - sign * CORN_D / 2;
+
+        const bsJ = MeshBuilder.CreateBox(`${this.id}_bs_${side}_${tag}`,
+          { width: T + BS_D, height: BS_H, depth: BS_D }, scene);
+        bsJ.position = new Vector3(bsJX, BS_H / 2, jambZ + signZ * BS_D / 2);
+        bsJ.material = bsMat;
+        this.prop(bsJ);
+
+        const cornJ = MeshBuilder.CreateBox(`${this.id}_corn_${side}_${tag}`,
+          { width: T + CORN_D, height: CORN_H, depth: CORN_D }, scene);
+        cornJ.position = new Vector3(cornJX, H - CORN_H / 2, jambZ + signZ * CORN_D / 2);
+        cornJ.material = cornMat;
+        this.prop(cornJ);
+      }
     }
   }
 

@@ -101,8 +101,8 @@ export class Game {
   }
 
   /** Raum in die Szene laden (ohne bestehende Räume zu entfernen). */
-  async addRoom(room: IRoom, worldOffset = Vector3.Zero()): Promise<void> {
-    await room.load(this.scene, worldOffset);
+  async addRoom(room: IRoom, worldOffset = Vector3.Zero(), rotationY = 0): Promise<void> {
+    await room.load(this.scene, worldOffset, rotationY);
     this.rooms.push(room);
   }
 
@@ -124,4 +124,5 @@ export class Game {
   getScene(): Scene {
     return this.scene;
   }
+
 }
