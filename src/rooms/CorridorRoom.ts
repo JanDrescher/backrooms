@@ -8,6 +8,8 @@ export class CorridorRoom extends RoomBase {
   readonly id: string;
   readonly doors: DoorDefinition[];
   readonly spawnPoint: Vector3;
+  readonly halfW: number;
+  readonly halfD: number;
 
   private readonly W = 3;
   private readonly D: number;
@@ -29,6 +31,8 @@ export class CorridorRoom extends RoomBase {
     const depths  = [9, 12, 15] as const;
     this.D = opts.D ?? depths[Math.floor(Math.random() * depths.length)];
     this.H = opts.H ?? 2.8;
+    this.halfW = this.W / 2 + T;  // Seitenwände: 1,7 m
+    this.halfD = this.D / 2;       // Enden offen
 
     const numSegs = this.D / 3;
 

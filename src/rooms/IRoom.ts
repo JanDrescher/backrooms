@@ -13,6 +13,8 @@ export interface IRoom {
   readonly spawnPoint: Vector3;
   readonly interactables: IInteractable[];
   readonly worldOffset: Vector3;
+  readonly halfW: number;  // halbe Außenbreite (lokales X, inkl. Wand) für AABB
+  readonly halfD: number;  // halbe Außentiefe  (lokales Z, inkl. Wand) für AABB
 
   /** Baut die Raumgeometrie in die Szene, optional mit Weltversatz und Y-Rotation. */
   load(scene: Scene, worldOffset?: Vector3, rotationY?: number): Promise<void>;

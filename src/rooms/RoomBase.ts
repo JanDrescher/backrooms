@@ -20,9 +20,12 @@ export abstract class RoomBase implements IRoom {
   abstract readonly id: string;
   abstract readonly doors: DoorDefinition[];
   abstract readonly spawnPoint: Vector3;
+  abstract readonly halfW: number;
+  abstract readonly halfD: number;
 
   readonly interactables: IInteractable[]  = [];
-  worldOffset: Vector3                     = Vector3.Zero();
+  worldOffset:    Vector3 = Vector3.Zero();
+  worldRotationY: number  = 0;
   protected meshes:       AbstractMesh[]   = [];
   protected lights:       Light[]          = [];
   protected nodes:        TransformNode[]  = [];
@@ -37,7 +40,8 @@ export abstract class RoomBase implements IRoom {
   protected static readonly TILE_H = 0.386; // m vertikal
 
   async load(scene: Scene, worldOffset = Vector3.Zero(), rotationY = 0): Promise<void> {
-    this.worldOffset = worldOffset;
+    this.worldOffset    = worldOffset;
+    this.worldRotationY = rotationY;
     await this.buildGeometry(scene);
 
     // Pivot-TransformNode für Rotation + Versatz aller Meshes/Nodes.

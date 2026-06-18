@@ -4,6 +4,33 @@ import { CorridorRoom } from "../rooms/CorridorRoom";
 import type { IRoom, DoorDefinition } from "../rooms/IRoom";
 import { computeConnection } from "./LevelBuilder";
 
+// ── Kollisions- und Bounds-Prüfung (10×10 Chunks = 30×30 m) ────────────────
+
+type AABB = { minX: number; maxX: number; minZ: number; maxZ: number };
+
+// 30×30 Chunks = 90×90 m; Spine wächst nach +Z, daher südlich etwas Puffer
+const MAP: AABB = { minX: -45, maxX: 45, minZ: -10, maxZ: 80 };
+
+function roomAABB(room: IRoom, offset: Vector3, rotation: number): AABB {
+  // Rotation ist immer ein Vielfaches von π/2; ungerade Vielfache tauschen X↔Z
+  const isOdd = Math.round(rotation / (Math.PI / 2)) % 2 !== 0;
+  const hx = isOdd ? room.halfD : room.halfW;
+  const hz = isOdd ? room.halfW : room.halfD;
+  return { minX: offset.x - hx, maxX: offset.x + hx, minZ: offset.z - hz, maxZ: offset.z + hz };
+}
+
+function inBounds(a: AABB): boolean {
+  return a.minX >= MAP.minX && a.maxX <= MAP.maxX
+      && a.minZ >= MAP.minZ && a.maxZ <= MAP.maxZ;
+}
+
+function overlapsAny(a: AABB, others: AABB[], margin = 0.05): boolean {
+  return others.some(b =>
+    a.minX + margin < b.maxX && a.maxX - margin > b.minX &&
+    a.minZ + margin < b.maxZ && a.maxZ - margin > b.minZ,
+  );
+}
+
 export interface PlacedRoom {
   room:     IRoom;
   offset:   Vector3;
@@ -72,18 +99,27 @@ function levelParams(level: number): LevelParams {
 const ROOM_HEIGHTS = [2.5, 2.8, 3.0, 3.2] as const;
 
 export function generateLevel(levelNumber: number): PlacedRoom[] {
-  const p       = levelParams(levelNumber);
-  const levelH  = 2.8;  // Korridore haben immer genau 2,8m Höhe
+  const p      = levelParams(levelNumber);
+  const levelH = 2.8;
 
-  const placed: PlacedRoom[] = [];
+  const placed:      PlacedRoom[] = [];
+  const placedAABBs: AABB[]       = [];
   let n = 0;
   const uid = (prefix: string) => `${prefix}${n++}`;
 
-  // PlaceholderRoom — jeder bekommt seine eigene zufällige Höhe
-  const makePlaceholder = (anchor: DoorDefinition, id: string, isStart: boolean, isExit: boolean): PlacedRoom => {
+  // Raum/Korridor hinzufügen — gibt false zurück wenn außerhalb Bounds oder Kollision
+  const tryAdd = (pr: PlacedRoom): boolean => {
+    const aabb = roomAABB(pr.room, pr.offset, pr.rotation);
+    if (!inBounds(aabb) || overlapsAny(aabb, placedAABBs)) return false;
+    placed.push(pr);
+    placedAABBs.push(aabb);
+    return true;
+  };
+
+  const makePlaceholder = (anchor: DoorDefinition, id: string, isStart: boolean, isExit: boolean): PlacedRoom | null => {
     const W  = pick(p.roomSizes);
     const D  = pick(p.roomSizes);
-    const H  = pick(ROOM_HEIGHTS);       // unabhängig von levelH
+    const H  = pick(ROOM_HEIGHTS);
     const dw = isStart ? "north" : doorWallForAnchor(anchor.direction);
     const room = new PlaceholderRoom(id, W, D, H, dw);
     const doorId = isStart ? "north" : dw;
@@ -91,16 +127,9 @@ export function generateLevel(levelNumber: number): PlacedRoom[] {
       ? { offset: Vector3.Zero(), rotation: 0 }
       : computeConnection(anchor, room.doors.find(d => d.id === doorId)!);
     const entry: PlacedRoom = { room, offset, rotation, isStart, isExit };
-    placed.push(entry);
-    return entry;
+    return tryAdd(entry) ? entry : null;
   };
 
-  /**
-   * Platziert am Korridor-Ende entweder einen PlaceholderRoom (55%)
-   * oder einen Junction-Korridor (45%) mit drei weiteren Ausgängen.
-   * Der Junction-Korridor läuft quer (branchSide="both" am gleichen Segment)
-   * und erschafft so ein Kreuz- oder T-Stück.
-   */
   const makeTerminal = (anchor: DoorDefinition, id: string): void => {
     if (Math.random() < 0.55) {
       makePlaceholder(anchor, id, false, false);
@@ -115,9 +144,8 @@ export function generateLevel(levelNumber: number): PlacedRoom[] {
     const { offset: jOff, rotation: jRot } = computeConnection(
       anchor, junc.doors.find(d => d.id === "south")!,
     );
-    placed.push({ room: junc, offset: jOff, rotation: jRot, isStart: false, isExit: false });
+    if (!tryAdd({ room: junc, offset: jOff, rotation: jRot, isStart: false, isExit: false })) return;
 
-    // Nord-, Ost- und Westausgang des Junction-Korridors je ein Placeholder
     for (const dId of ["north", "branch_east", "branch_west"] as const) {
       const exitAnchor = worldDoor(junc.doors.find(d => d.id === dId)!, jOff, jRot);
       makePlaceholder(exitAnchor, uid(`j_${dId}`), false, false);
@@ -127,8 +155,9 @@ export function generateLevel(levelNumber: number): PlacedRoom[] {
   // ── Start-Raum ─────────────────────────────────────────────────────────
   const dummyAnchor: DoorDefinition = { id: "", position: Vector3.Zero(), direction: new Vector3(0, 0, -1) };
   const startEntry = makePlaceholder(dummyAnchor, uid("p"), true, false);
-  let anchor = worldDoor(startEntry.room.doors.find(d => d.id === "north")!, Vector3.Zero(), 0);
+  if (!startEntry) return placed;
 
+  let anchor = worldDoor(startEntry.room.doors.find(d => d.id === "north")!, Vector3.Zero(), 0);
   const pendingBranches: DoorDefinition[] = [];
 
   // ── Hauptgang ──────────────────────────────────────────────────────────
@@ -136,19 +165,18 @@ export function generateLevel(levelNumber: number): PlacedRoom[] {
     const D = pick(p.corridorDs);
     const corridor = new CorridorRoom(uid("c"), { D, H: levelH });
     const { offset, rotation } = computeConnection(anchor, corridor.doors.find(d => d.id === "south")!);
-    placed.push({ room: corridor, offset, rotation, isStart: false, isExit: false });
+    const pr: PlacedRoom = { room: corridor, offset, rotation, isStart: false, isExit: false };
+    if (!tryAdd(pr)) break;  // Spine endet hier — außerhalb Bounds oder Kollision
 
-    // Alle branch_*-Türen dieses Korridors als ausstehende Äste merken
     for (const door of corridor.doors) {
       if (door.id.startsWith("branch_")) {
         pendingBranches.push(worldDoor(door, offset, rotation));
       }
     }
-
     anchor = worldDoor(corridor.doors.find(d => d.id === "north")!, offset, rotation);
   }
 
-  // ── Exit-Raum (Haupt-Korridorende) ────────────────────────────────────
+  // ── Exit-Raum ──────────────────────────────────────────────────────────
   makePlaceholder(anchor, uid("exit"), false, true);
 
   // ── Seitenäste ─────────────────────────────────────────────────────────
@@ -161,15 +189,13 @@ export function generateLevel(levelNumber: number): PlacedRoom[] {
       const { offset: bOff, rotation: bRot } = computeConnection(
         branchAnchor, bc.doors.find(d => d.id === "south")!,
       );
-      placed.push({ room: bc, offset: bOff, rotation: bRot, isStart: false, isExit: false });
+      if (!tryAdd({ room: bc, offset: bOff, rotation: bRot, isStart: false, isExit: false })) break;
 
-      // Sub-Abzweige im Ast-Korridor → direkt Placeholder (keine weitere Tiefe)
       for (const door of bc.doors) {
         if (door.id.startsWith("branch_")) {
           makePlaceholder(worldDoor(door, bOff, bRot), uid("sbp"), false, false);
         }
       }
-
       branchAnchor = worldDoor(bc.doors.find(d => d.id === "north")!, bOff, bRot);
     }
 

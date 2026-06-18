@@ -14,6 +14,8 @@ export class PlaceholderRoom extends RoomBase {
   readonly id: string;
   readonly doors: DoorDefinition[];
   readonly spawnPoint: Vector3;
+  readonly halfW: number;
+  readonly halfD: number;
 
   private readonly W: number;
   private readonly D: number;
@@ -30,6 +32,8 @@ export class PlaceholderRoom extends RoomBase {
     this.W        = width;
     this.D        = depth;
     this.H        = height;
+    this.halfW    = width  / 2 + T;
+    this.halfD    = depth  / 2 + T;
     this.doorWall = doorWall;
 
     const wallLen = (doorWall === "north" || doorWall === "south") ? width : depth;
@@ -295,11 +299,13 @@ export class PlaceholderRoom extends RoomBase {
         isOpen = !isOpen;
         let target = 0;
         if (isOpen) {
-          const worldPivotX = this.worldOffset.x + this.pivotLocalPos.x;
-          const worldPivotZ = this.worldOffset.z + this.pivotLocalPos.z;
-          const diff = new Vector3(playerPos.x - worldPivotX, 0, playerPos.z - worldPivotZ);
+          const rotPivot    = RoomBase.rotY(this.pivotLocalPos, this.worldRotationY);
+          const worldPivotX = this.worldOffset.x + rotPivot.x;
+          const worldPivotZ = this.worldOffset.z + rotPivot.z;
+          const diff        = new Vector3(playerPos.x - worldPivotX, 0, playerPos.z - worldPivotZ);
+          const worldOut    = RoomBase.rotY(this.outwardDir, this.worldRotationY);
           // dot > 0: Spieler außen → Tür in Raum schwingen (BJS -π/2 = kanonisch +Z = inward)
-          target = Vector3.Dot(diff, this.outwardDir) > 0 ? -Math.PI / 2 : Math.PI / 2;
+          target = Vector3.Dot(diff, worldOut) > 0 ? -Math.PI / 2 : Math.PI / 2;
         }
         Animation.CreateAndStartAnimation(
           "doorSwing", hinge, "rotation.y",
