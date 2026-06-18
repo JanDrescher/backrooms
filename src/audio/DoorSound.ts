@@ -55,7 +55,6 @@ function frameImpact(ctx: AudioContext, out: AudioNode, t: number): void {
 
 export function playDoorSound(x: number, y: number, z: number): void {
   const ctx = getCtx();
-  if (ctx.state === "suspended") ctx.resume();
 
   const panner = ctx.createPanner();
   panner.panningModel    = "HRTF";

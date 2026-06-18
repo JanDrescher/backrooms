@@ -1,72 +1,54 @@
-import { Vector3 } from "@babylonjs/core";
 import { Game } from "./engine/Game";
-import { PlaceholderRoom } from "./rooms/PlaceholderRoom";
-import { CorridorRoom } from "./rooms/CorridorRoom";
-import { computeConnection } from "./world/LevelBuilder";
+import { Blueprint } from "./blueprint/Blueprint";
+import { realizeBlueprintElements } from "./blueprint/Realizer";
 
 const canvas  = document.getElementById("renderCanvas") as HTMLCanvasElement;
 const overlay = document.getElementById("overlay") as HTMLDivElement;
 const game    = new Game(canvas);
 
+//  Komplex-Layout (1 Einheit = 1 Chunk = 3 m × 3 m):
+//
+//  col:  0  1  2  3  4  5  6  7
+//  row 0:       [R3][R3]
+//  row 1:       [R3][R3]
+//  row 2:       [C1]            [R2][R2]
+//  row 3:       [C1][C2][C2][C2][R2][R2]
+//  row 4:       [C1]
+//  row 5:       [C1]
+//  row 6:    [R1][R1]
+//  row 7:    [R1][R1]
+//  row 8:    [R1][R1]
+//
+//  Verbindungen (Öffnungen):
+//  R3 Süd ↔ C1 Nord  |  C1 Ost (Abzweig) ↔ C2 West  |  C2 Ost ↔ R2 West  |  C1 Süd ↔ R1 Nord
+
+const blueprint = new Blueprint()
+  .place('R3', 'placeholder', 2, 0, 2, 2)   // 2×2 oben
+  .place('C1', 'corridor',    2, 2, 1, 4)   // 1×4 vertikal
+  .place('C2', 'corridor',    3, 3, 3, 1)   // 3×1 horizontal
+  .place('R2', 'placeholder', 6, 2, 2, 2)   // 2×2 rechts
+  .place('R1', 'placeholder', 1, 6, 2, 3)   // 2×3 unten-links
+  .connect('R3', 'C1')
+  .connect('C1', 'C2')
+  .connect('C2', 'R2')
+  .connect('C1', 'R1');
+
+async function loadComplex(): Promise<void> {
+  game.clearRooms();
+  const configs = realizeBlueprintElements(blueprint.realize());
+  const c2 = configs.find(c => c.room.id === 'C2');
+  if (c2) c2.offset.x -= 0.2; // C2: 0,2 m nach Westen (BJS −X) wegen C1-Ostwand
+  for (const cfg of configs)
+    await game.addRoom(cfg.room, cfg.offset, cfg.rotationY);
+  const start = configs.find(c => c.room.id === 'R3')!;
+  game.spawnAt(start.room);
+}
+
 overlay.addEventListener("click", async () => {
   overlay.style.display = "none";
   await canvas.requestPointerLock();
   game.focusCanvas();
-  game.clearRooms();
-
-  // ── Komplex-Layout ────────────────────────────────────────────────
-  //
-  //   [P0]  Startroom (6×6)
-  //     |
-  //   [C1]  N-S Korridor, Ostabzweigung bei Segment 1
-  //     |  \
-  //   [C2]  [C3] O-W Korridor (nach Osten)
-  //     |         \
-  //   [P2]       [P1] Endraum (6×6)
-  //
-  // ─────────────────────────────────────────────────────────────────
-
-  const p0 = new PlaceholderRoom("p0", 6, 6, 2.8, "north");
-  await game.addRoom(p0);
-
-  const c1 = new CorridorRoom("c1", { D: 9, H: 2.8, branchSide: "east", branchSeg: 1 });
-  const { offset: c1Off, rotation: c1Rot } = computeConnection(
-    p0.doors.find(d => d.id === "north")!,
-    c1.doors.find(d => d.id === "south")!,
-  );
-  await game.addRoom(c1, c1Off, c1Rot);
-
-  const c2 = new CorridorRoom("c2", { D: 9, H: 2.8, branchSide: null });
-  const { offset: c2Off, rotation: c2Rot } = computeConnection(
-    c1.doors.find(d => d.id === "north")!,
-    c2.doors.find(d => d.id === "south")!,
-  );
-  await game.addRoom(c2, c2Off, c2Rot);
-
-  // P2: Südtür → kein Rotation nötig
-  const p2 = new PlaceholderRoom("p2", 6, 6, 2.8, "south");
-  const { offset: p2Off, rotation: p2Rot } = computeConnection(
-    c2.doors.find(d => d.id === "north")!,
-    p2.doors.find(d => d.id === "south")!,
-  );
-  await game.addRoom(p2, p2Off, p2Rot);
-
-  const c3 = new CorridorRoom("c3", { D: 9, H: 2.8, branchSide: null });
-  const { offset: c3Off, rotation: c3Rot } = computeConnection(
-    c1.doors.find(d => d.id === "branch_east")!,
-    c3.doors.find(d => d.id === "south")!,
-  );
-  await game.addRoom(c3, c3Off, c3Rot);
-
-  // P1: Westtür (visuell links = +X-Wand) → kein Rotation nötig
-  const p1 = new PlaceholderRoom("p1", 6, 6, 2.8, "west");
-  const { offset: p1Off, rotation: p1Rot } = computeConnection(
-    c3.doors.find(d => d.id === "north")!,
-    p1.doors.find(d => d.id === "west")!,
-  );
-  await game.addRoom(p1, p1Off, p1Rot);
-
-  game.spawnAt(p0);
+  await loadComplex();
 });
 
 document.addEventListener("pointerlockchange", () => {

@@ -24,7 +24,7 @@ export class PlaceholderRoom extends RoomBase {
   private readonly pivotRotY:    number;   // Pivot-Rotation
   private readonly outwardDir:   Vector3;  // Ausgehende Raumrichtung der Tür-Wand
 
-  constructor(id: string, width = 6, depth = 6, height = 2.8, doorWall: DoorWall = "north") {
+  constructor(id: string, width = 6, depth = 6, height = 2.8, doorWall: DoorWall = "north", doorSegIdx?: number) {
     super();
     this.id       = id;
     this.W        = width;
@@ -33,7 +33,7 @@ export class PlaceholderRoom extends RoomBase {
     this.doorWall = doorWall;
 
     const wallLen = (doorWall === "north" || doorWall === "south") ? width : depth;
-    const segIdx  = Math.floor(Math.random() * (wallLen / 3));
+    const segIdx  = doorSegIdx ?? Math.floor(Math.random() * (wallLen / 3));
     this.doorOff  = -wallLen / 2 + 1.5 + segIdx * 3;
 
     switch (doorWall) {

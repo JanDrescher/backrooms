@@ -1,7 +1,18 @@
 let _ctx: AudioContext | null = null;
 
 export function getCtx(): AudioContext {
-  if (!_ctx) _ctx = new AudioContext();
+  if (!_ctx) {
+    _ctx = new AudioContext();
+    // Browser-Autoplay-Policy: AudioContext startet "suspended" ohne User-Gesture.
+    // Beim ersten Click oder Keydown entsperren.
+    const unlock = () => {
+      if (_ctx && _ctx.state === "suspended") _ctx.resume();
+      window.removeEventListener("click",   unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+    window.addEventListener("click",   unlock);
+    window.addEventListener("keydown", unlock);
+  }
   return _ctx;
 }
 

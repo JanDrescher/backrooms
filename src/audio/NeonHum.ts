@@ -31,7 +31,6 @@ export class NeonHum {
     if (this.started || this.disposed) return;
     this.started = true;
     const ctx = getCtx();
-    if (ctx.state === "suspended") ctx.resume();
 
     // Leicht zufällige Grundfrequenz pro Raum (49–51 Hz)
     const base = 50 + (Math.random() - 0.5) * 2;
