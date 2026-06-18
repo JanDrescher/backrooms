@@ -42,9 +42,9 @@ function rnd(min: number, max: number): number {
 function doorWallForAnchor(anchorDir: Vector3): DoorWall {
   const nx = Math.round(anchorDir.x);
   const nz = Math.round(anchorDir.z);
-  if (nz < 0) return "south";
-  if (nz > 0) return "north";
-  if (nx < 0) return "west";
+  if (nz < 0) return "north";
+  if (nz > 0) return "south";
+  if (nx > 0) return "west";
   return "east";
 }
 
@@ -73,7 +73,7 @@ const ROOM_HEIGHTS = [2.5, 2.8, 3.0, 3.2] as const;
 
 export function generateLevel(levelNumber: number): PlacedRoom[] {
   const p       = levelParams(levelNumber);
-  const levelH  = pick(ROOM_HEIGHTS);  // alle Korridore teilen exakt eine Höhe
+  const levelH  = 2.8;  // Korridore haben immer genau 2,8m Höhe
 
   const placed: PlacedRoom[] = [];
   let n = 0;

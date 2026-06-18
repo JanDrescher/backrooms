@@ -17,11 +17,9 @@ export interface RoomConfig {
  * Übersetzt einen validierten Blueprint (RealizedElement[]) in Rauminstanzen
  * mit Weltkoordinaten.
  *
- * Koordinaten-Konvention (BJS Left-Handed, Kamera schaut in −Z):
- *   Blueprint col+ (Papier-Ost)  →  BJS −X (visuell rechts = Ost)
- *   Blueprint row+ (Papier-Süd)  →  BJS +Z (visuell hinten   = Süd)
- *
- * worldOffset.x wird daher NEGIERT: bjs_x = −(col * CHUNK + W/2)
+ * Koordinaten-Konvention (BJS Left-Handed, +Z = Nord, +X = Ost):
+ *   Blueprint col+ (Papier-Ost)  →  BJS +X (visuell rechts = Ost)
+ *   Blueprint row+ (Papier-Süd)  →  BJS −Z (visuell tiefer  = Süd)
  */
 export function realizeBlueprintElements(elements: RealizedElement[]): RoomConfig[] {
   return elements.map(el => {
@@ -42,9 +40,10 @@ export function realizeBlueprintElements(elements: RealizedElement[]): RoomConfi
 // Korridor-ENDEN sind offen (keine Wand) → kein Versatz.
 // Korridor-SEITENabzweige haben Seitenwände  → Versatz nötig.
 //
-// Richtung im BJS-Weltkoordinatensystem (X gespiegelt):
-//   'N' → weg von −Z = Δz +T   'S' → weg von +Z = Δz −T
-//   'E' → weg von −X = Δx +T   'W' → weg von +X = Δx −T
+// Richtung im BJS-Weltkoordinatensystem (+X = Ost, +Z = Nord):
+//   'N' → offene Nordwand (+Z); Boden-Nordende an Chunk-Grenze → Δz −T
+//   'S' → offene Südwand (−Z); Boden-Südende  an Chunk-Grenze → Δz +T
+//   'E' → weg von +X = Δx −T   'W' → weg von −X = Δx +T
 
 function wallShift(
   openings: { dir: CardinalDir }[],
@@ -57,10 +56,10 @@ function wallShift(
   let dx = 0, dz = 0;
   for (const o of openings) {
     switch (o.dir) {
-      case 'N': dz += T_WALL; break;
-      case 'S': dz -= T_WALL; break;
-      case 'E': dx += T_WALL; break;
-      case 'W': dx -= T_WALL; break;
+      case 'N': dz -= T_WALL; break;
+      case 'S': dz += T_WALL; break;
+      case 'E': dx -= T_WALL; break;
+      case 'W': dx += T_WALL; break;
     }
   }
   return { dx, dz };
@@ -84,7 +83,7 @@ function realizePlaceholder(el: RealizedElement): RoomConfig {
   const { dx, dz } = wallShift(el.openings, el.type);
   return {
     room:      new PlaceholderRoom(el.id, W, D, 2.8, doorWall, doorSegIdx),
-    offset:    new Vector3(-(el.worldX + W / 2) + dx, 0, el.worldZ + D / 2 + dz),
+    offset:    new Vector3(el.worldX + W / 2 + dx, 0, -(el.worldZ + D / 2) + dz),
     rotationY: 0,
   };
 }
@@ -103,19 +102,19 @@ function realizeCorridor(el: RealizedElement): RoomConfig {
       room: new CorridorRoom(el.id, {
         D,
         branchSide:    branchSideNS(branchE, branchW),
-        branchSegEast: branchE?.offset,   // Blueprint-row-Offset = CorridorRoom-Seg ✓
-        branchSegWest: branchW?.offset,
+        branchSegEast: branchE ? el.rows - 1 - branchE.offset : undefined,
+        branchSegWest: branchW ? el.rows - 1 - branchW.offset : undefined,
       }),
-      offset:    new Vector3(-(el.worldX + CHUNK / 2) + dx, 0, el.worldZ + D / 2 + dz),
+      offset:    new Vector3(el.worldX + CHUNK / 2 + dx, 0, -(el.worldZ + D / 2) + dz),
       rotationY: 0,
     };
   } else {
     // ── E-W-Korridor (rows=1, rotiert um +π/2) ───────────────────────────────
-    // Nach Rotation +π/2:
-    //   CorridorRoom-Nordende (lokal −Z) → Welt +X (visuell links = Blueprint-'W'-Ende)
-    //   CorridorRoom-Südende  (lokal +Z) → Welt −X (visuell rechts = Blueprint-'E'-Ende)
-    //   Branch 'N' → CorridorRoom "east"; Branch 'S' → CorridorRoom "west"
-    //   branchSeg-Offset stimmt direkt (keine Spiegelung nötig)
+    // Nach Rotation +π/2 und Z-Negierung (+Z = Nord):
+    //   CorridorRoom-Nordende (lokal +Z) → Welt +X (= Blueprint-'E'-Ende, Ost)
+    //   CorridorRoom-Südende  (lokal −Z) → Welt −X (= Blueprint-'W'-Ende, West)
+    //   Branch 'N' → CorridorRoom "west" (local −X → nach Rot. Welt +Z = Nord)
+    //   Branch 'S' → CorridorRoom "east" (local +X → nach Rot. Welt −Z = Süd)
     const D = el.cols * CHUNK;
     const branchN = el.openings.find(o => o.dir === 'N');
     const branchS = el.openings.find(o => o.dir === 'S');
@@ -125,10 +124,10 @@ function realizeCorridor(el: RealizedElement): RoomConfig {
       room: new CorridorRoom(el.id, {
         D,
         branchSide:    branchSideEW(branchN, branchS),
-        branchSegEast: branchN?.offset,
-        branchSegWest: branchS?.offset,
+        branchSegEast: branchS?.offset,
+        branchSegWest: branchN?.offset,
       }),
-      offset:    new Vector3(-(el.worldX + D / 2) + dx, 0, el.worldZ + CHUNK / 2 + dz),
+      offset:    new Vector3(el.worldX + D / 2 + dx, 0, -(el.worldZ + CHUNK / 2) + dz),
       rotationY: Math.PI / 2,
     };
   }
@@ -146,7 +145,7 @@ function realizeJunction(el: RealizedElement): RoomConfig {
     room:      new PlaceholderRoom(el.id, W, D, 2.8,
                  opening ? dirToDoorWall(opening.dir) : 'north',
                  doorSegIdx),
-    offset:    new Vector3(-(el.worldX + W / 2) + dx, 0, el.worldZ + D / 2 + dz),
+    offset:    new Vector3(el.worldX + W / 2 + dx, 0, -(el.worldZ + D / 2) + dz),
     rotationY: 0,
   };
 }
@@ -164,14 +163,12 @@ function dirToDoorWall(dir: CardinalDir): DoorWall {
 /**
  * Korrigiert den Blueprint-Offset zum PlaceholderRoom-doorSegIdx.
  *
- * Wegen der BJS-X-Inversion (+X = visuell LINKS) und der jeweiligen
- * Pivot-Rotation der Türwand muss der Offset für 'N'- und 'E'-Wände
- * gespiegelt werden:
+ * Mit korrekter BJS-X-Konvention (+X = Ost) und den neuen Pivot-Rotationen:
  *
- *  'N' (pivotRotY=0):   kanonisch-X → lokal-X → BJS-X (invertiert) → flip
- *  'S' (pivotRotY=π):   Pivot kehrt X um → hebt BJS-Inversion auf   → kein flip
- *  'E' (pivotRotY=+π/2): kanonisch-X → lokal-−Z → flip
- *  'W' (pivotRotY=−π/2): kanonisch-X → lokal-+Z → kein flip
+ *  'N' (pivotRotY=π):    Pivot kehrt X um → flip mit cols
+ *  'S' (pivotRotY=0):    kanonisch-X → lokal-X → kein flip
+ *  'E' (pivotRotY=−π/2): Z-Negierung kehrt Z-Richtung um → flip mit rows
+ *  'W' (pivotRotY=+π/2): Z-Negierung + Pivot heben sich auf → kein flip
  */
 function adjustedSegIdx(
   dir: CardinalDir, offset: number, cols: number, rows: number,
@@ -200,7 +197,7 @@ function branchSideEW(
   south: Opening | undefined,
 ): "east" | "west" | "both" | null {
   if (north && south) return "both";
-  if (north)          return "east";  // 'N' → CorridorRoom "east" nach Rotation +π/2
-  if (south)          return "west";  // 'S' → CorridorRoom "west"
+  if (north)          return "west";  // 'N' → CorridorRoom "west" (local −X → Welt +Z = Nord)
+  if (south)          return "east";  // 'S' → CorridorRoom "east" (local +X → Welt −Z = Süd)
   return null;
 }

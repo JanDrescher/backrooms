@@ -27,9 +27,8 @@ export class CorridorRoom extends RoomBase {
     this.id = id;
 
     const depths  = [9, 12, 15] as const;
-    const heights = [2.5, 2.8, 3.0, 3.2] as const;
-    this.D = opts.D ?? depths[Math.floor(Math.random()  * depths.length)];
-    this.H = opts.H ?? heights[Math.floor(Math.random() * heights.length)];
+    this.D = opts.D ?? depths[Math.floor(Math.random() * depths.length)];
+    this.H = opts.H ?? 2.8;
 
     const numSegs = this.D / 3;
 
@@ -70,19 +69,19 @@ export class CorridorRoom extends RoomBase {
 
     const { D, H, branchSide, branchSegE, branchSegW } = this;
     this.doors = [
-      { id: "north", position: new Vector3(0, H / 2, -D / 2), direction: new Vector3( 0, 0, -1) },
-      { id: "south", position: new Vector3(0, H / 2,  D / 2), direction: new Vector3( 0, 0,  1) },
+      { id: "north", position: new Vector3(0, H / 2,  D / 2), direction: new Vector3( 0, 0,  1) },
+      { id: "south", position: new Vector3(0, H / 2, -D / 2), direction: new Vector3( 0, 0, -1) },
     ];
-    // BJS LH: −X = visuell rechts (Osten), +X = visuell links (Westen)
+    // +X = Osten = rechts, −X = Westen = links
     if (branchSide === "east" || branchSide === "both") {
       this.doors.push({ id: "branch_east",
-        position:  new Vector3(-(this.W / 2 + T), H / 2, -D / 2 + branchSegE * 3 + 1.5),
-        direction: new Vector3(-1, 0, 0) });
+        position:  new Vector3( (this.W / 2 + T), H / 2, -D / 2 + branchSegE * 3 + 1.5),
+        direction: new Vector3( 1, 0, 0) });
     }
     if (branchSide === "west" || branchSide === "both") {
       this.doors.push({ id: "branch_west",
-        position:  new Vector3( (this.W / 2 + T), H / 2, -D / 2 + branchSegW * 3 + 1.5),
-        direction: new Vector3( 1, 0, 0) });
+        position:  new Vector3(-(this.W / 2 + T), H / 2, -D / 2 + branchSegW * 3 + 1.5),
+        direction: new Vector3(-1, 0, 0) });
     }
   }
 
@@ -141,11 +140,11 @@ export class CorridorRoom extends RoomBase {
     const bsX   = innerX > 0 ? innerX - BS_D   / 2 : innerX + BS_D   / 2;
     const cornX = innerX > 0 ? innerX - CORN_D / 2 : innerX + CORN_D / 2;
 
-    // W-Wand (−X) = Ostabzweig; E-Wand (+X) = Westabzweig
+    // E-Wand (+X) = Ostabzweig; W-Wand (−X) = Westabzweig
     const isEastBranch = branchSide === "east" || branchSide === "both";
     const isWestBranch = branchSide === "west" || branchSide === "both";
-    const hasBranch = (side === "W" && isEastBranch) || (side === "E" && isWestBranch);
-    const branchSeg = side === "W" ? branchSegE : branchSegW;
+    const hasBranch = (side === "E" && isEastBranch) || (side === "W" && isWestBranch);
+    const branchSeg = side === "E" ? branchSegE : branchSegW;
 
     const buildPanel = (panelId: string, depth: number, cz: number) => {
       const wallMat = this.mat(scene, `wall_${panelId}`, Color3.White());

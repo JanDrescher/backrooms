@@ -38,24 +38,24 @@ export class PlaceholderRoom extends RoomBase {
 
     switch (doorWall) {
       case "north":
-        this.pivotLocalPos = new Vector3(0, 0, -depth / 2 - T);
-        this.pivotRotY     = 0;
-        this.outwardDir    = new Vector3(0, 0, -1);
-        break;
-      case "south":
         this.pivotLocalPos = new Vector3(0, 0, depth / 2 + T);
         this.pivotRotY     = Math.PI;
         this.outwardDir    = new Vector3(0, 0, 1);
         break;
-      case "east": // visuell rechts = −X-Wand
-        this.pivotLocalPos = new Vector3(-width / 2 - T, 0, 0);
-        this.pivotRotY     = Math.PI / 2;   // BJS rotY(π/2): canonical-Z → room-X (outward)
-        this.outwardDir    = new Vector3(-1, 0, 0);
+      case "south":
+        this.pivotLocalPos = new Vector3(0, 0, -depth / 2 - T);
+        this.pivotRotY     = 0;
+        this.outwardDir    = new Vector3(0, 0, -1);
         break;
-      default:    // "west" = visuell links = +X-Wand
+      case "east": // visuell rechts = +X-Wand
         this.pivotLocalPos = new Vector3(width / 2 + T, 0, 0);
-        this.pivotRotY     = -Math.PI / 2;  // BJS rotY(-π/2): canonical-Z → room+X (outward)
+        this.pivotRotY     = -Math.PI / 2;  // BJS rotY(-π/2): canonical-Z → room +X (outward)
         this.outwardDir    = new Vector3(1, 0, 0);
+        break;
+      default:    // "west" = visuell links = −X-Wand
+        this.pivotLocalPos = new Vector3(-width / 2 - T, 0, 0);
+        this.pivotRotY     = Math.PI / 2;   // BJS rotY(+π/2): canonical-Z → room −X (outward)
+        this.outwardDir    = new Vector3(-1, 0, 0);
         break;
     }
 
@@ -74,10 +74,10 @@ export class PlaceholderRoom extends RoomBase {
     );
 
     this.doors = [
-      { id: "north", position: doorWall === "north" ? doorRoomPos.clone() : new Vector3(0, DOOR_H / 2, -depth / 2 - T), direction: new Vector3(0, 0, -1) },
-      { id: "south", position: doorWall === "south" ? doorRoomPos.clone() : new Vector3(0, DOOR_H / 2,  depth / 2 + T), direction: new Vector3(0, 0,  1) },
-      { id: "east",  position: doorWall === "east"  ? doorRoomPos.clone() : new Vector3(-width / 2 - T, DOOR_H / 2, 0), direction: new Vector3(-1, 0, 0) },
-      { id: "west",  position: doorWall === "west"  ? doorRoomPos.clone() : new Vector3( width / 2 + T, DOOR_H / 2, 0), direction: new Vector3( 1, 0, 0) },
+      { id: "north", position: doorWall === "north" ? doorRoomPos.clone() : new Vector3(0, DOOR_H / 2,  depth / 2 + T), direction: new Vector3(0, 0,  1) },
+      { id: "south", position: doorWall === "south" ? doorRoomPos.clone() : new Vector3(0, DOOR_H / 2, -depth / 2 - T), direction: new Vector3(0, 0, -1) },
+      { id: "east",  position: doorWall === "east"  ? doorRoomPos.clone() : new Vector3( width / 2 + T, DOOR_H / 2, 0), direction: new Vector3( 1, 0, 0) },
+      { id: "west",  position: doorWall === "west"  ? doorRoomPos.clone() : new Vector3(-width / 2 - T, DOOR_H / 2, 0), direction: new Vector3(-1, 0, 0) },
     ];
   }
 
@@ -141,10 +141,10 @@ export class PlaceholderRoom extends RoomBase {
 
     // ── Vollwände (3 von 4, Tür-Wand wird via Pivot aufgebaut) ───────────────
     for (const sw of [
-      { name: "N",  skip: doorWall === "north", pos: new Vector3(0,            wallH / 2, -D / 2 - T / 2), w: W, d: T, mat: wallMatZ },
-      { name: "S",  skip: doorWall === "south", pos: new Vector3(0,            wallH / 2,  D / 2 + T / 2), w: W, d: T, mat: wallMatZ },
-      { name: "CE", skip: doorWall === "west",  pos: new Vector3( W/2 + T/2, wallH / 2, 0),               w: T, d: D, mat: wallMatX },
-      { name: "CW", skip: doorWall === "east",  pos: new Vector3(-W/2 - T/2, wallH / 2, 0),               w: T, d: D, mat: wallMatX },
+      { name: "N",  skip: doorWall === "north", pos: new Vector3(0,            wallH / 2,  D / 2 + T / 2), w: W, d: T, mat: wallMatZ },
+      { name: "S",  skip: doorWall === "south", pos: new Vector3(0,            wallH / 2, -D / 2 - T / 2), w: W, d: T, mat: wallMatZ },
+      { name: "CE", skip: doorWall === "east",  pos: new Vector3( W/2 + T/2, wallH / 2, 0),               w: T, d: D, mat: wallMatX },
+      { name: "CW", skip: doorWall === "west",  pos: new Vector3(-W/2 - T/2, wallH / 2, 0),               w: T, d: D, mat: wallMatX },
     ] as Array<{ name: string; skip: boolean; pos: Vector3; w: number; d: number; mat: StandardMaterial }>) {
       if (sw.skip) continue;
       const mesh = MeshBuilder.CreateBox(`${this.id}_wall_${sw.name}`,
@@ -327,10 +327,10 @@ export class PlaceholderRoom extends RoomBase {
 
     // Vollwand-Leisten (3 Wände)
     for (const b of [
-      { s: "N",  skip: doorWall === "north", pos: new Vector3(0,              BS_H/2, -D/2 + BS_D/2), w: W,    d: BS_D },
-      { s: "S",  skip: doorWall === "south", pos: new Vector3(0,              BS_H/2,  D/2 - BS_D/2), w: W,    d: BS_D },
-      { s: "CE", skip: doorWall === "west",  pos: new Vector3( W/2 - BS_D/2, BS_H/2, 0),              w: BS_D, d: D    },
-      { s: "CW", skip: doorWall === "east",  pos: new Vector3(-W/2 + BS_D/2, BS_H/2, 0),              w: BS_D, d: D    },
+      { s: "N",  skip: doorWall === "north", pos: new Vector3(0,              BS_H/2,  D/2 - BS_D/2), w: W,    d: BS_D },
+      { s: "S",  skip: doorWall === "south", pos: new Vector3(0,              BS_H/2, -D/2 + BS_D/2), w: W,    d: BS_D },
+      { s: "CE", skip: doorWall === "east",  pos: new Vector3( W/2 - BS_D/2, BS_H/2, 0),              w: BS_D, d: D    },
+      { s: "CW", skip: doorWall === "west",  pos: new Vector3(-W/2 + BS_D/2, BS_H/2, 0),              w: BS_D, d: D    },
     ] as Array<{ s: string; skip: boolean; pos: Vector3; w: number; d: number }>) {
       if (b.skip) continue;
       const mesh = MeshBuilder.CreateBox(`${this.id}_baseboard_${b.s}`,
@@ -365,8 +365,8 @@ export class PlaceholderRoom extends RoomBase {
     const cy = H - CH / 2;
 
     for (const c of [
-      { s: "N",  pos: new Vector3(0,              cy, -D/2 + CD/2), w: W,  d: CD },
-      { s: "S",  pos: new Vector3(0,              cy,  D/2 - CD/2), w: W,  d: CD },
+      { s: "N",  pos: new Vector3(0,              cy,  D/2 - CD/2), w: W,  d: CD },
+      { s: "S",  pos: new Vector3(0,              cy, -D/2 + CD/2), w: W,  d: CD },
       { s: "CE", pos: new Vector3( W/2 - CD/2, cy, 0),              w: CD, d: D  },
       { s: "CW", pos: new Vector3(-W/2 + CD/2, cy, 0),              w: CD, d: D  },
     ] as Array<{ s: string; pos: Vector3; w: number; d: number }>) {
@@ -438,8 +438,8 @@ export class PlaceholderRoom extends RoomBase {
         }
 
         if (Math.random() > 0.6) continue;
-        const distN = colZ + D / 2;
-        const distS = D / 2 - colZ;
+        const distN = D / 2 - colZ;
+        const distS = colZ + D / 2;
         const distW = colX + W / 2;
         const distE = W / 2 - colX;
         const minDist = Math.min(distN, distS, distW, distE);
@@ -455,7 +455,7 @@ export class PlaceholderRoom extends RoomBase {
         if (dir === "N" || dir === "S") {
           const toWall  = dir === "N" ? distN : distS;
           const stubLen = toWall - COL_S / 2;
-          const signZ   = dir === "N" ? -1 : 1;
+          const signZ   = dir === "N" ? 1 : -1;
           const stubCZ  = colZ + signZ * (COL_S / 2 + stubLen / 2);
           const stub = MeshBuilder.CreateBox(`${this.id}_stub_${ix}_${iz}`,
             { width: T_DIV, height: H_DIV, depth: stubLen }, scene);
