@@ -4,18 +4,16 @@ import { CorridorRoom } from "../rooms/CorridorRoom";
 import type { IRoom, DoorDefinition } from "../rooms/IRoom";
 import { computeConnection } from "./LevelBuilder";
 
-// ── Kollisions- und Bounds-Prüfung (10×10 Chunks = 30×30 m) ────────────────
+// ── AABB ─────────────────────────────────────────────────────────────────────
 
 type AABB = { minX: number; maxX: number; minZ: number; maxZ: number };
 
-// 30×30 Chunks = 90×90 m; Spine wächst nach +Z, daher südlich etwas Puffer
 const MAP: AABB = { minX: -45, maxX: 45, minZ: -10, maxZ: 80 };
 
 function roomAABB(room: IRoom, offset: Vector3, rotation: number): AABB {
-  // Rotation ist immer ein Vielfaches von π/2; ungerade Vielfache tauschen X↔Z
   const isOdd = Math.round(rotation / (Math.PI / 2)) % 2 !== 0;
-  const hx = isOdd ? room.halfD : room.halfW;
-  const hz = isOdd ? room.halfW : room.halfD;
+  const hx    = isOdd ? room.halfD : room.halfW;
+  const hz    = isOdd ? room.halfW : room.halfD;
   return { minX: offset.x - hx, maxX: offset.x + hx, minZ: offset.z - hz, maxZ: offset.z + hz };
 }
 
@@ -31,6 +29,8 @@ function overlapsAny(a: AABB, others: AABB[], margin = 0.05): boolean {
   );
 }
 
+// ── Typen ─────────────────────────────────────────────────────────────────────
+
 export interface PlacedRoom {
   room:     IRoom;
   offset:   Vector3;
@@ -39,7 +39,7 @@ export interface PlacedRoom {
   isExit:   boolean;
 }
 
-// ── Hilfsfunktionen ──────────────────────────────────────────────────────────
+// ── Hilfsfunktionen ───────────────────────────────────────────────────────────
 
 function rotY(v: Vector3, a: number): Vector3 {
   const c = Math.cos(a), s = Math.sin(a);
@@ -62,10 +62,14 @@ function rnd(min: number, max: number): number {
   return min + Math.floor(Math.random() * (max - min + 1));
 }
 
-/**
- * Leitet die doorWall ab, die computeConnection rotation=0 liefert —
- * damit liegt Tür-Geometrie und Tür-Logik immer an derselben Stelle.
- */
+function shuffle<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
 function doorWallForAnchor(anchorDir: Vector3): DoorWall {
   const nx = Math.round(anchorDir.x);
   const nz = Math.round(anchorDir.z);
@@ -75,39 +79,21 @@ function doorWallForAnchor(anchorDir: Vector3): DoorWall {
   return "east";
 }
 
-// ── Level-Parameter ──────────────────────────────────────────────────────────
+// ── Konstanten ────────────────────────────────────────────────────────────────
 
-interface LevelParams {
-  spineLength: number;
-  branchDepth: number;
-  corridorDs:  readonly number[];
-  roomSizes:   readonly number[];
-}
-
-function levelParams(level: number): LevelParams {
-  const l = Math.max(1, level);
-  return {
-    spineLength: rnd(2 + l, 3 + l * 2),
-    branchDepth: rnd(1, Math.min(1 + Math.floor(l / 2), 3)),
-    corridorDs:  [9, 12, 15] as const,
-    roomSizes:   l < 4 ? [6, 9] : [6, 9, 12],
-  };
-}
-
-// ── Generator ────────────────────────────────────────────────────────────────
-
+const LEVEL_H      = 2.8;
+const CORRIDOR_DS  = [9, 9, 9, 12, 12] as const;
+const ROOM_SIZES   = [6, 6, 9, 9, 12] as const;
 const ROOM_HEIGHTS = [2.5, 2.8, 3.0, 3.2] as const;
 
-export function generateLevel(levelNumber: number): PlacedRoom[] {
-  const p      = levelParams(levelNumber);
-  const levelH = 2.8;
+// ── Generator ─────────────────────────────────────────────────────────────────
 
+export function generateLevel(_levelNumber: number): PlacedRoom[] {
   const placed:      PlacedRoom[] = [];
   const placedAABBs: AABB[]       = [];
-  let n = 0;
-  const uid = (prefix: string) => `${prefix}${n++}`;
+  let   n = 0;
+  const uid = (p: string) => `${p}${n++}`;
 
-  // Raum/Korridor hinzufügen — gibt false zurück wenn außerhalb Bounds oder Kollision
   const tryAdd = (pr: PlacedRoom): boolean => {
     const aabb = roomAABB(pr.room, pr.offset, pr.rotation);
     if (!inBounds(aabb) || overlapsAny(aabb, placedAABBs)) return false;
@@ -116,90 +102,95 @@ export function generateLevel(levelNumber: number): PlacedRoom[] {
     return true;
   };
 
-  const makePlaceholder = (anchor: DoorDefinition, id: string, isStart: boolean, isExit: boolean): PlacedRoom | null => {
-    const W  = pick(p.roomSizes);
-    const D  = pick(p.roomSizes);
-    const H  = pick(ROOM_HEIGHTS);
-    const dw = isStart ? "north" : doorWallForAnchor(anchor.direction);
-    const room = new PlaceholderRoom(id, W, D, H, dw);
-    const doorId = isStart ? "north" : dw;
-    const { offset, rotation } = isStart
-      ? { offset: Vector3.Zero(), rotation: 0 }
-      : computeConnection(anchor, room.doors.find(d => d.id === doorId)!);
-    const entry: PlacedRoom = { room, offset, rotation, isStart, isExit };
-    return tryAdd(entry) ? entry : null;
+  // Terminalen Raum an einer offenen Verbindung platzieren.
+  // Garantiert immer einen Abschluss — nie ein offenes Korridorende.
+  const placeRoom = (anchor: DoorDefinition, isExit = false): void => {
+    const dw = doorWallForAnchor(anchor.direction);
+    const room = new PlaceholderRoom(uid("p"), pick(ROOM_SIZES), pick(ROOM_SIZES), pick(ROOM_HEIGHTS), dw);
+    const { offset, rotation } = computeConnection(anchor, room.doors.find(d => d.id === dw)!);
+    tryAdd({ room, offset, rotation, isStart: false, isExit });
   };
 
-  const makeTerminal = (anchor: DoorDefinition, id: string): void => {
-    if (Math.random() < 0.55) {
-      makePlaceholder(anchor, id, false, false);
-      return;
+  // ── Startraum ────────────────────────────────────────────────────────────
+  const startRoom = new PlaceholderRoom(uid("p"), 9, 9, 2.8, "north");
+  if (!tryAdd({ room: startRoom, offset: Vector3.Zero(), rotation: 0, isStart: true, isExit: false }))
+    return placed;
+
+  // ── DFS-Stack ─────────────────────────────────────────────────────────────
+  // Jeder Eintrag ist eine offene Verbindung + verbleibende Korridorschritte.
+  // Branches erhalten einen NEUEN (frischen) Tiefenzähler → eigenständige Pfade.
+  // Alle Pfade enden garantiert in einem Raum.
+  interface StackItem { anchor: DoorDefinition; stepsLeft: number }
+
+  const stack: StackItem[] = [
+    {
+      anchor:    worldDoor(startRoom.doors.find(d => d.id === "north")!, Vector3.Zero(), 0),
+      stepsLeft: 8,
+    },
+  ];
+
+  while (stack.length > 0) {
+    const { anchor, stepsLeft } = stack.pop()!;
+
+    // Tiefe erschöpft → Raum als Abschluss
+    if (stepsLeft <= 0) {
+      placeRoom(anchor);
+      continue;
     }
-    const jD   = pick([9, 12] as const);
-    const jSeg = rnd(1, Math.max(1, Math.floor(jD / 3) - 1));
-    const junc = new CorridorRoom(uid("jc"), {
-      D: jD, H: levelH, branchSide: "both",
-      branchSegEast: jSeg, branchSegWest: jSeg,
+
+    const D       = pick(CORRIDOR_DS);
+    const numSegs = D / 3;
+    const maxSeg  = numSegs - 1;
+
+    // Abzweig-Strategie: häufig "both" für Netzdichte
+    const r = Math.random();
+    const branchSide: "east" | "west" | "both" | null =
+      r < 0.50 ? "both"  :
+      r < 0.75 ? (Math.random() < 0.5 ? "east" : "west") :
+      null;
+
+    const corridor = new CorridorRoom(uid("c"), {
+      D, H: LEVEL_H, branchSide,
+      branchSeg:     rnd(0, maxSeg),
+      branchSegEast: rnd(0, maxSeg),
+      branchSegWest: rnd(0, maxSeg),
     });
-    const { offset: jOff, rotation: jRot } = computeConnection(
-      anchor, junc.doors.find(d => d.id === "south")!,
-    );
-    if (!tryAdd({ room: junc, offset: jOff, rotation: jRot, isStart: false, isExit: false })) return;
 
-    for (const dId of ["north", "branch_east", "branch_west"] as const) {
-      const exitAnchor = worldDoor(junc.doors.find(d => d.id === dId)!, jOff, jRot);
-      makePlaceholder(exitAnchor, uid(`j_${dId}`), false, false);
-    }
-  };
-
-  // ── Start-Raum ─────────────────────────────────────────────────────────
-  const dummyAnchor: DoorDefinition = { id: "", position: Vector3.Zero(), direction: new Vector3(0, 0, -1) };
-  const startEntry = makePlaceholder(dummyAnchor, uid("p"), true, false);
-  if (!startEntry) return placed;
-
-  let anchor = worldDoor(startEntry.room.doors.find(d => d.id === "north")!, Vector3.Zero(), 0);
-  const pendingBranches: DoorDefinition[] = [];
-
-  // ── Hauptgang ──────────────────────────────────────────────────────────
-  for (let i = 0; i < p.spineLength; i++) {
-    const D = pick(p.corridorDs);
-    const corridor = new CorridorRoom(uid("c"), { D, H: levelH });
     const { offset, rotation } = computeConnection(anchor, corridor.doors.find(d => d.id === "south")!);
-    const pr: PlacedRoom = { room: corridor, offset, rotation, isStart: false, isExit: false };
-    if (!tryAdd(pr)) break;  // Spine endet hier — außerhalb Bounds oder Kollision
 
-    for (const door of corridor.doors) {
-      if (door.id.startsWith("branch_")) {
-        pendingBranches.push(worldDoor(door, offset, rotation));
-      }
-    }
-    anchor = worldDoor(corridor.doors.find(d => d.id === "north")!, offset, rotation);
-  }
-
-  // ── Exit-Raum ──────────────────────────────────────────────────────────
-  makePlaceholder(anchor, uid("exit"), false, true);
-
-  // ── Seitenäste ─────────────────────────────────────────────────────────
-  for (const branchStart of pendingBranches) {
-    let branchAnchor = branchStart;
-
-    for (let b = 0; b < p.branchDepth; b++) {
-      const D  = pick(p.corridorDs);
-      const bc = new CorridorRoom(uid("bc"), { D, H: levelH });
-      const { offset: bOff, rotation: bRot } = computeConnection(
-        branchAnchor, bc.doors.find(d => d.id === "south")!,
-      );
-      if (!tryAdd({ room: bc, offset: bOff, rotation: bRot, isStart: false, isExit: false })) break;
-
-      for (const door of bc.doors) {
+    if (tryAdd({ room: corridor, offset, rotation, isStart: false, isExit: false })) {
+      // Alle Folge-Verbindungen sammeln
+      const next: StackItem[] = [
+        // Nord-Ende: Pfad läuft weiter (Tiefe -1)
+        {
+          anchor:    worldDoor(corridor.doors.find(d => d.id === "north")!, offset, rotation),
+          stepsLeft: stepsLeft - 1,
+        },
+      ];
+      // Jeder Abzweig startet einen frischen Pfad (unabhängige Tiefe)
+      for (const door of corridor.doors) {
         if (door.id.startsWith("branch_")) {
-          makePlaceholder(worldDoor(door, bOff, bRot), uid("sbp"), false, false);
+          next.push({
+            anchor:    worldDoor(door, offset, rotation),
+            stepsLeft: rnd(3, 7),
+          });
         }
       }
-      branchAnchor = worldDoor(bc.doors.find(d => d.id === "north")!, bOff, bRot);
+      // Mischen → organische Reihenfolge, kein deterministisches Muster
+      shuffle(next);
+      for (const item of next) stack.push(item);
+    } else {
+      // Korridor passt nicht → sofortiger Raumabschluss
+      placeRoom(anchor);
     }
+  }
 
-    makeTerminal(branchAnchor, uid("pt"));
+  // Exit markieren (letzter PlaceholderRoom)
+  for (let i = placed.length - 1; i >= 0; i--) {
+    if (!placed[i].isStart && placed[i].room instanceof PlaceholderRoom) {
+      placed[i] = { ...placed[i], isExit: true };
+      break;
+    }
   }
 
   return placed;

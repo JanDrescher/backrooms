@@ -1,5 +1,5 @@
 import { Game } from "./engine/Game";
-import { generateLevel } from "./world/LevelGenerator";
+import { generateLevelFromBlueprint } from "./world/BlueprintGenerator";
 
 const canvas  = document.getElementById("renderCanvas") as HTMLCanvasElement;
 const overlay = document.getElementById("overlay") as HTMLDivElement;
@@ -7,10 +7,11 @@ const game    = new Game(canvas);
 
 async function loadLevel(): Promise<void> {
   game.clearRooms();
-  const rooms = generateLevel(1);
+  const rooms = generateLevelFromBlueprint(1);
   const start = rooms.find(r => r.isStart)!;
   for (const pr of rooms)
     await game.addRoom(pr.room, pr.offset, pr.rotation);
+  game.setupGlobalFloor();
   game.spawnAt(start.room);
 }
 

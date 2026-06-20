@@ -96,7 +96,6 @@ export class PlaceholderRoom extends RoomBase {
     const wallCZ  = T / 2; // Wandmitte in kanonischem Z
 
     // ── Materialien ──────────────────────────────────────────────────────────
-    const floorMat     = this.mat(scene, "floor",     Color3.White());
     const ceilMat      = this.mat(scene, "ceil",      Color3.White());
     const frameMat     = this.mat(scene, "frame",     new Color3(0.42, 0.37, 0.16));
     const baseboardMat = this.mat(scene, "baseboard", new Color3(0.71, 0.69, 0.42));
@@ -116,12 +115,6 @@ export class PlaceholderRoom extends RoomBase {
     const wallMatX = this.mat(scene, "wall_x", Color3.White());
     wallMatX.diffuseTexture = this.buildWallpaperTexture(scene, "x", wallH / RoomBase.TILE_H, D / RoomBase.TILE_W);
 
-    // ── Teppich ───────────────────────────────────────────────────────────────
-    const carpetTex = this.buildCarpetTexture(scene);
-    carpetTex.uScale = (D + 2 * T) / 3;
-    carpetTex.vScale = (W + 2 * T) / 3;
-    floorMat.diffuseTexture = carpetTex;
-
     // ── Deckenplatten ─────────────────────────────────────────────────────────
     const { diffuse: ceilDiff, bump: ceilBump } = this.buildCeilingTileTexture(scene);
     ceilDiff.uScale = D; ceilDiff.vScale = W;
@@ -130,13 +123,7 @@ export class PlaceholderRoom extends RoomBase {
     ceilMat.bumpTexture    = ceilBump;
     ceilMat.bumpTexture.level = 0.35;
 
-    // ── Boden und Decke ───────────────────────────────────────────────────────
-    const floor = MeshBuilder.CreateBox(`${this.id}_floor`,
-      { width: W + 2 * T, height: T, depth: D + 2 * T }, scene);
-    floor.position.y = -T / 2;
-    floor.material   = floorMat;
-    this.track(floor);
-
+    // ── Decke ────────────────────────────────────────────────────────────────
     const ceil = MeshBuilder.CreateBox(`${this.id}_ceil`,
       { width: W, height: T, depth: D }, scene);
     ceil.position.y = H + T / 2;
@@ -191,7 +178,6 @@ export class PlaceholderRoom extends RoomBase {
     this.buildDoor(scene, doorPivot, wallCZ);
     this.buildBaseboards(scene, doorPivot, wallLen, leftW, rightW, baseboardMat);
     this.buildCornice(scene, corniceMat);
-    this.buildFloorGrime(scene, W, D);
     this.buildCeilingLamps(scene);
     this.buildRoomLighting(scene);
     this.buildDividers(scene);

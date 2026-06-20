@@ -92,15 +92,9 @@ export class CorridorRoom extends RoomBase {
   protected async buildGeometry(scene: Scene): Promise<void> {
     const { W, D, H } = this;
 
-    const floorMat = this.mat(scene, "floor",     Color3.White());
     const ceilMat  = this.mat(scene, "ceil",      Color3.White());
     const bsMat    = this.mat(scene, "baseboard", new Color3(0.71, 0.69, 0.42));
     const cornMat  = this.mat(scene, "cornice",   new Color3(0.57, 0.56, 0.48));
-
-    const carpetTex = this.buildCarpetTexture(scene);
-    carpetTex.uScale = D / 3;
-    carpetTex.vScale = (W + 2 * T) / 3;
-    floorMat.diffuseTexture = carpetTex;
 
     const { diffuse: ceilDiff, bump: ceilBump } = this.buildCeilingTileTexture(scene);
     ceilDiff.uScale = D; ceilDiff.vScale = W;
@@ -108,12 +102,6 @@ export class CorridorRoom extends RoomBase {
     ceilMat.diffuseTexture = ceilDiff;
     ceilMat.bumpTexture    = ceilBump;
     ceilMat.bumpTexture.level = 0.35;
-
-    const floor = MeshBuilder.CreateBox(`${this.id}_floor`,
-      { width: W + 2 * T, height: T, depth: D }, scene);
-    floor.position.y = -T / 2;
-    floor.material   = floorMat;
-    this.track(floor);
 
     const ceil = MeshBuilder.CreateBox(`${this.id}_ceil`,
       { width: W, height: T, depth: D }, scene);
@@ -124,7 +112,6 @@ export class CorridorRoom extends RoomBase {
     this.buildSideWall(scene, "E",  W / 2 + T / 2,  W / 2, bsMat, cornMat);
     this.buildSideWall(scene, "W", -W / 2 - T / 2, -W / 2, bsMat, cornMat);
 
-    this.buildFloorGrime(scene, W, D);
     this.buildCeilingLamps(scene);
     this.buildRoomLighting(scene);
   }

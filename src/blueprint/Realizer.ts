@@ -2,6 +2,7 @@ import { Vector3 } from "@babylonjs/core";
 import type { RealizedElement, CardinalDir, ElementType } from "./types";
 import { PlaceholderRoom, type DoorWall } from "../rooms/PlaceholderRoom";
 import { CorridorRoom } from "../rooms/CorridorRoom";
+import { JunctionRoom, type JunctionOpening } from "../rooms/JunctionRoom";
 import type { IRoom } from "../rooms/IRoom";
 
 const CHUNK  = 3;   // Meter pro Chunk
@@ -21,12 +22,20 @@ export interface RoomConfig {
  *   Blueprint col+ (Papier-Ost)  →  BJS +X (visuell rechts = Ost)
  *   Blueprint row+ (Papier-Süd)  →  BJS −Z (visuell tiefer  = Süd)
  */
-export function realizeBlueprintElements(elements: RealizedElement[]): RoomConfig[] {
+/**
+ * worldOffsetX / worldOffsetZ: BJS-Weltversatz für alle Räume.
+ * Nötig wenn der Blueprint nicht bei (0,0) in BJS-Koordinaten beginnt.
+ */
+export function realizeBlueprintElements(
+  elements: RealizedElement[],
+  worldOffsetX = 0,
+  worldOffsetZ = 0,
+): RoomConfig[] {
   return elements.map(el => {
     switch (el.type) {
-      case 'placeholder': return realizePlaceholder(el);
-      case 'corridor':    return realizeCorridor(el);
-      case 'junction':    return realizeJunction(el);
+      case 'placeholder': return realizePlaceholder(el, worldOffsetX, worldOffsetZ);
+      case 'corridor':    return realizeCorridor(el, worldOffsetX, worldOffsetZ);
+      case 'junction':    return realizeJunction(el, worldOffsetX, worldOffsetZ);
     }
   });
 }
@@ -67,7 +76,7 @@ function wallShift(
 
 // ─── Raumtypen ────────────────────────────────────────────────────────────────
 
-function realizePlaceholder(el: RealizedElement): RoomConfig {
+function realizePlaceholder(el: RealizedElement, ox: number, oz: number): RoomConfig {
   const W = el.cols * CHUNK;
   const D = el.rows * CHUNK;
 
@@ -83,12 +92,12 @@ function realizePlaceholder(el: RealizedElement): RoomConfig {
   const { dx, dz } = wallShift(el.openings, el.type);
   return {
     room:      new PlaceholderRoom(el.id, W, D, 2.8, doorWall, doorSegIdx),
-    offset:    new Vector3(el.worldX + W / 2 + dx, 0, -(el.worldZ + D / 2) + dz),
+    offset:    new Vector3(el.worldX + W / 2 + dx + ox, 0, -(el.worldZ + D / 2) + dz + oz),
     rotationY: 0,
   };
 }
 
-function realizeCorridor(el: RealizedElement): RoomConfig {
+function realizeCorridor(el: RealizedElement, ox: number, oz: number): RoomConfig {
   const isNS = el.cols === 1;
 
   if (isNS) {
@@ -105,7 +114,7 @@ function realizeCorridor(el: RealizedElement): RoomConfig {
         branchSegEast: branchE ? el.rows - 1 - branchE.offset : undefined,
         branchSegWest: branchW ? el.rows - 1 - branchW.offset : undefined,
       }),
-      offset:    new Vector3(el.worldX + CHUNK / 2 + dx, 0, -(el.worldZ + D / 2) + dz),
+      offset:    new Vector3(el.worldX + CHUNK / 2 + dx + ox, 0, -(el.worldZ + D / 2) + dz + oz),
       rotationY: 0,
     };
   } else {
@@ -127,25 +136,19 @@ function realizeCorridor(el: RealizedElement): RoomConfig {
         branchSegEast: branchS?.offset,
         branchSegWest: branchN?.offset,
       }),
-      offset:    new Vector3(el.worldX + D / 2 + dx, 0, -(el.worldZ + CHUNK / 2) + dz),
+      offset:    new Vector3(el.worldX + D / 2 + dx + ox, 0, -(el.worldZ + CHUNK / 2) + dz + oz),
       rotationY: Math.PI / 2,
     };
   }
 }
 
-function realizeJunction(el: RealizedElement): RoomConfig {
-  const W = el.cols * CHUNK;
-  const D = el.rows * CHUNK;
-  const opening = el.openings[0];
-  const doorSegIdx = opening
-    ? adjustedSegIdx(opening.dir, opening.offset, el.cols, el.rows)
-    : undefined;
+function realizeJunction(el: RealizedElement, ox: number, oz: number): RoomConfig {
+  const S = el.cols * CHUNK;  // quadratisch: cols === rows
   const { dx, dz } = wallShift(el.openings, el.type);
+  const openings = el.openings.map(o => DIR_TO_JUNCTION[o.dir]);
   return {
-    room:      new PlaceholderRoom(el.id, W, D, 2.8,
-                 opening ? dirToDoorWall(opening.dir) : 'north',
-                 doorSegIdx),
-    offset:    new Vector3(el.worldX + W / 2 + dx, 0, -(el.worldZ + D / 2) + dz),
+    room:      new JunctionRoom(el.id, { size: S, openings }),
+    offset:    new Vector3(el.worldX + S / 2 + dx + ox, 0, -(el.worldZ + S / 2) + dz + oz),
     rotationY: 0,
   };
 }
@@ -153,6 +156,10 @@ function realizeJunction(el: RealizedElement): RoomConfig {
 // ─── Hilfsfunktionen ─────────────────────────────────────────────────────────
 
 const DIR_TO_DOORWALL: Record<CardinalDir, DoorWall> = {
+  N: 'north', S: 'south', E: 'east', W: 'west',
+};
+
+const DIR_TO_JUNCTION: Record<CardinalDir, JunctionOpening> = {
   N: 'north', S: 'south', E: 'east', W: 'west',
 };
 

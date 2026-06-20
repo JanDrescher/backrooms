@@ -5,10 +5,12 @@ import {
   Vector3,
   Color3,
   UniversalCamera,
+  type AbstractMesh,
 } from "@babylonjs/core";
 import type { IInteractable } from "./IInteractable";
 import type { IRoom } from "../rooms/IRoom";
 import { updateAudioListener } from "../audio/NeonHum";
+import { buildGlobalFloor } from "../world/GlobalFloor";
 
 // Augenhöhe in Metern
 const EYE_HEIGHT = 1.7;
@@ -21,6 +23,7 @@ export class Game {
   private scene: Scene;
   private camera!: UniversalCamera;
   private rooms: IRoom[] = [];
+  private floorMeshes: AbstractMesh[] = [];
 
   constructor(canvas: HTMLCanvasElement) {
     this.engine = new Engine(canvas, true, { preserveDrawingBuffer: true });
@@ -101,10 +104,18 @@ export class Game {
     (this.engine.getRenderingCanvas() as HTMLCanvasElement).focus();
   }
 
-  /** Alle Räume aus der Szene entfernen. */
+  /** Alle Räume und den globalen Boden aus der Szene entfernen. */
   clearRooms(): void {
     for (const r of this.rooms) r.unload();
     this.rooms = [];
+    for (const m of this.floorMeshes) m.dispose();
+    this.floorMeshes = [];
+  }
+
+  /** Globalen Komplex-Boden erstellen (nach dem Laden aller Räume aufrufen). */
+  setupGlobalFloor(): void {
+    for (const m of this.floorMeshes) m.dispose();
+    this.floorMeshes = buildGlobalFloor(this.scene);
   }
 
   /** Raum in die Szene laden (ohne bestehende Räume zu entfernen). */
