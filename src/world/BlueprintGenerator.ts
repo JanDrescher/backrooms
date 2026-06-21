@@ -58,15 +58,15 @@ function pick<T>(arr: readonly T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-/** Lokale Tür → Weltkoordinaten nach Offset + Rotation. */
+/** Lokale Tür → Weltkoordinaten nach Offset + BJS-LH-Rotation. */
 function worldDoor(door: DoorDefinition, offset: Vector3, rotY: number): DoorDefinition {
   const c = Math.cos(rotY), s = Math.sin(rotY);
   const p = door.position;
   const d = door.direction;
   return {
     id:        door.id,
-    position:  new Vector3(p.x * c - p.z * s + offset.x, p.y, p.x * s + p.z * c + offset.z),
-    direction: new Vector3(d.x * c - d.z * s, d.y, d.x * s + d.z * c),
+    position:  new Vector3(p.x * c + p.z * s + offset.x, p.y, -p.x * s + p.z * c + offset.z),
+    direction: new Vector3(d.x * c + d.z * s, d.y, -d.x * s + d.z * c),
   };
 }
 

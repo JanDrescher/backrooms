@@ -15,8 +15,8 @@ export class CorridorRoom extends RoomBase {
   private readonly D: number;
   private readonly H: number;
   private readonly branchSide: "east" | "west" | "both" | null;
-  private readonly branchSegE: number;  // segment-Index für Ostabzweig (W-Wand)
-  private readonly branchSegW: number;  // segment-Index für Westabzweig (E-Wand)
+  private readonly branchSegE: number;  // segment-Index für Ostabzweig (E-Wand, +X)
+  private readonly branchSegW: number;  // segment-Index für Westabzweig (W-Wand, −X)
 
   constructor(id: string, opts: {
     D?: number; H?: number;
