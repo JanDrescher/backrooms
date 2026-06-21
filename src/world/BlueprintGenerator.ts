@@ -1,220 +1,213 @@
 import { Vector3 } from "@babylonjs/core";
-import { Blueprint } from "../blueprint/Blueprint";
-import { realizeBlueprintElements } from "../blueprint/Realizer";
-import type { ElementType } from "../blueprint/types";
+import { PlaceholderRoom, type DoorWall } from "../rooms/PlaceholderRoom";
+import { CorridorRoom } from "../rooms/CorridorRoom";
+import { CapWallRoom } from "../rooms/CapWallRoom";
+import { computeConnection } from "./LevelBuilder";
+import type { DoorDefinition } from "../rooms/IRoom";
 import type { PlacedRoom } from "./LevelGenerator";
 
-// ── Maze-Grid ────────────────────────────────────────────────────────────────
-//
-//  Knoten: 8×8 Knotenpunkte im Chunk-Grid, je STEP=4 Chunks voneinander entfernt.
-//  Korridor: 3 Chunks lang (STEP-1), 1 Chunk breit — verbindet je zwei Knoten.
-//
-//  Chunk-Layout:
-//    col  0          = Knoten gx=0
-//    cols 1–3        = N-S-Korridor oder leer
-//    col  4          = Knoten gx=1
-//    …
-//    col 28          = Knoten gx=7
-//
-//  Weltkoordinaten-Versatz (→ GlobalFloor -45…+45, -10…+80):
-//    BJS X = worldX + S/2 + OX   mit OX=-45
-//    BJS Z = -(worldZ + S/2) + OZ mit OZ=80
+// ── Minimap-Daten ────────────────────────────────────────────────────────────
 
-const GX   = 8;    // Knotenraster Breite (Ost-West)
-const GY   = 8;    // Knotenraster Höhe  (Nord-Süd)
-const STEP = 4;    // Chunk-Abstand zwischen Knoten-Mittelpunkten
-const OX   = -45;  // BJS-Weltversatz X
-const OZ   =  80;  // BJS-Weltversatz Z
+export interface MinimapRoom {
+  type:   'placeholder' | 'corridor';
+  cx:     number;   // BJS-Weltmittelpunkt X
+  cz:     number;   // BJS-Weltmittelpunkt Z
+  localW: number;   // intrinsische Breite (X-Achse vor Rotation), in Metern
+  localD: number;   // intrinsische Tiefe  (Z-Achse vor Rotation), in Metern
+  rotY:   number;   // Rotation um Y-Achse (Radiant)
+}
 
-// Anteil der Nicht-Spanning-Tree-Kanten, der zusätzlich aktiviert wird (Schleifen).
-const LOOP_FRACTION = 0.25;
+export interface MinimapConnection {
+  x: number;   // Weltposition des Verbindungspunkts
+  z: number;
+}
+
+export interface LevelData {
+  rooms:       PlacedRoom[];
+  mapData:     MinimapRoom[];
+  connections: MinimapConnection[];
+}
+
+// ── AABB / Bounds-Check ───────────────────────────────────────────────────────
+
+interface AABB { minX: number; maxX: number; minZ: number; maxZ: number; }
+
+// Grenzen des spielbaren Bereichs (GlobalFloor-Ausdehnung)
+const MAP: AABB = { minX: -45, maxX: 45, minZ: -45, maxZ: 45 };
+
+function roomAABB(room: { halfW: number; halfD: number }, offset: Vector3, rotation: number): AABB {
+  const odd = Math.round(rotation / (Math.PI / 2)) % 2 !== 0;
+  const hx  = odd ? room.halfD : room.halfW;
+  const hz  = odd ? room.halfW : room.halfD;
+  return { minX: offset.x - hx, maxX: offset.x + hx, minZ: offset.z - hz, maxZ: offset.z + hz };
+}
+
+function inBounds(a: AABB): boolean {
+  return a.minX >= MAP.minX && a.maxX <= MAP.maxX
+      && a.minZ >= MAP.minZ && a.maxZ <= MAP.maxZ;
+}
+
+function overlaps(a: AABB, b: AABB, margin = 0.05): boolean {
+  return a.minX + margin < b.maxX && a.maxX - margin > b.minX
+      && a.minZ + margin < b.maxZ && a.maxZ - margin > b.minZ;
+}
 
 // ── Hilfsfunktionen ───────────────────────────────────────────────────────────
 
-function shuffle<T>(arr: T[]): T[] {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [arr[i], arr[j]] = [arr[j], arr[i]];
-  }
-  return arr;
+function pick<T>(arr: readonly T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
 }
 
-// ── Phase 1: Labyrinth-Graph ─────────────────────────────────────────────────
-
-interface Node {
-  gx: number;
-  gy: number;
-  id: string;
-  degree: number;  // Anzahl aktiver Verbindungen
+/** Lokale Tür → Weltkoordinaten nach Offset + Rotation. */
+function worldDoor(door: DoorDefinition, offset: Vector3, rotY: number): DoorDefinition {
+  const c = Math.cos(rotY), s = Math.sin(rotY);
+  const p = door.position;
+  const d = door.direction;
+  return {
+    id:        door.id,
+    position:  new Vector3(p.x * c - p.z * s + offset.x, p.y, p.x * s + p.z * c + offset.z),
+    direction: new Vector3(d.x * c - d.z * s, d.y, d.x * s + d.z * c),
+  };
 }
 
-function buildMazeGraph(): { nodes: Node[]; edges: [number, number][] } {
-  const N = GX * GY;
-  const nodes: Node[] = Array.from({ length: N }, (_, i) => ({
-    gx: i % GX, gy: Math.floor(i / GX), id: `n_${i}`, degree: 0,
-  }));
-
-  // Alle möglichen Kanten (Horizontal & Vertikal)
-  const allEdges: [number, number][] = [];
-  for (let gy = 0; gy < GY; gy++) {
-    for (let gx = 0; gx < GX; gx++) {
-      const i = gy * GX + gx;
-      if (gx + 1 < GX) allEdges.push([i, gy * GX + gx + 1]);  // Ost
-      if (gy + 1 < GY) allEdges.push([i, (gy + 1) * GX + gx]); // Süd
-    }
-  }
-
-  // Prim's Algorithmus: Zufälliger Spannbaum
-  const inTree = new Set<number>([0]);
-  const activeEdges: [number, number][] = [];
-  const extraEdges:  [number, number][] = [];
-
-  // Erstmal Spannbaum erstellen
-  const edgeKey = (a: number, b: number) => `${Math.min(a, b)}-${Math.max(a, b)}`;
-  const usedKeys = new Set<string>();
-
-  while (inTree.size < N) {
-    const frontier: [number, number][] = [];
-    for (const [a, b] of allEdges) {
-      if (inTree.has(a) !== inTree.has(b)) frontier.push([a, b]);
-    }
-    if (frontier.length === 0) break;
-    const [a, b] = frontier[Math.floor(Math.random() * frontier.length)];
-    activeEdges.push([a, b]);
-    usedKeys.add(edgeKey(a, b));
-    nodes[a].degree++;
-    nodes[b].degree++;
-    inTree.add(a);
-    inTree.add(b);
-  }
-
-  // Zusätzliche Schleifen (LOOP_FRACTION der Nicht-Spannbaum-Kanten)
-  const remaining = shuffle(allEdges.filter(([a, b]) => !usedKeys.has(edgeKey(a, b))));
-  const nExtra    = Math.round(remaining.length * LOOP_FRACTION);
-  for (let i = 0; i < nExtra; i++) {
-    const [a, b] = remaining[i];
-    extraEdges.push([a, b]);
-    nodes[a].degree++;
-    nodes[b].degree++;
-  }
-
-  return { nodes, edges: [...activeEdges, ...extraEdges] };
+/**
+ * Welche PlaceholderRoom-Wand soll der eingehenden Verbindung gegenüberliegen?
+ * anchor.direction zeigt HERAUS aus dem Vorgänger-Raum/-Gang.
+ * Der neue Raum muss ihn mit der gegenüberliegenden Tür empfangen.
+ */
+function doorWallForAnchor(dir: Vector3): DoorWall {
+  const nx = Math.round(dir.x), nz = Math.round(dir.z);
+  if (nz > 0) return 'south';
+  if (nz < 0) return 'north';
+  if (nx > 0) return 'west';
+  return 'east';
 }
 
-// ── Phase 2: Blueprint ────────────────────────────────────────────────────────
+// ── Raum-Parameter ────────────────────────────────────────────────────────────
 
-function buildBlueprint(nodes: Node[], edges: [number, number][]): Blueprint {
-  const bp = new Blueprint();
+const ROOM_WIDTHS:  readonly number[] = [6, 6, 9, 9, 9, 12];
+const ROOM_DEPTHS:  readonly number[] = [6, 9, 9, 9, 12, 12];
+const ROOM_HEIGHTS: readonly number[] = [2.5, 2.8, 2.8, 3.0, 3.2];
+const CORR_DEPTHS:  readonly number[] = [9, 9, 9, 12, 12, 15];  // 3–5 Chunks
 
-  // Knoten platzieren (1×1 Chunk = 3m×3m Kreuzung oder Sackgasse)
-  for (const node of nodes) {
-    const col  = node.gx * STEP;
-    const row  = node.gy * STEP;
-    const type: ElementType = node.degree <= 1 ? 'placeholder' : 'junction';
-    bp.place(node.id, type, col, row, 1, 1);
-  }
+// Fallback-Größen für Sackgassen wenn große Räume nicht passen
+const FALLBACK_SIZES: readonly [number, number][] = [[3, 6], [6, 3], [3, 3]];
 
-  // Korridore zwischen Knoten, je einmal pro Kante
-  const placed = new Set<string>();
-  for (const [ai, bi] of edges) {
-    const key = `${Math.min(ai, bi)}-${Math.max(ai, bi)}`;
-    if (placed.has(key)) continue;
-    placed.add(key);
+const MAX_ROOMS = 45;
 
-    const a = nodes[ai], b = nodes[bi];
-    const corrId = `c_${key}`;
+// ── Generator ─────────────────────────────────────────────────────────────────
 
-    if (a.gx === b.gx) {
-      // N-S-Korridor (gleiche Spalte)
-      const topNode = a.gy < b.gy ? a : b;
-      const botNode = a.gy < b.gy ? b : a;
-      const col = topNode.gx * STEP;
-      const row = topNode.gy * STEP + 1;
-      bp.place(corrId, 'corridor', col, row, 1, STEP - 1);
-      bp.connect(topNode.id, corrId);
-      bp.connect(corrId, botNode.id);
-    } else {
-      // E-W-Korridor (gleiche Zeile)
-      const leftNode  = a.gx < b.gx ? a : b;
-      const rightNode = a.gx < b.gx ? b : a;
-      const col = leftNode.gx * STEP + 1;
-      const row = leftNode.gy * STEP;
-      bp.place(corrId, 'corridor', col, row, STEP - 1, 1);
-      bp.connect(leftNode.id, corrId);
-      bp.connect(corrId, rightNode.id);
-    }
-  }
+export function generateLevelFromBlueprint(_level: number): LevelData {
+  const placed:      PlacedRoom[]         = [];
+  const aabbs:       AABB[]               = [];
+  const mapData:     MinimapRoom[]         = [];
+  const connections: MinimapConnection[]   = [];
+  let   uid = 0;
 
-  return bp;
-}
+  const tryAdd = (pr: PlacedRoom, mroom: MinimapRoom): boolean => {
+    const aabb = roomAABB(pr.room, pr.offset, pr.rotation);
+    if (!inBounds(aabb) || aabbs.some(b => overlaps(aabb, b))) return false;
+    placed.push(pr);
+    aabbs.push(aabb);
+    mapData.push(mroom);
+    return true;
+  };
 
-// ── Phase 3: PlacedRoom[] ─────────────────────────────────────────────────────
+  // ── Start-Raum ────────────────────────────────────────────────────────────
+  const sW = pick(ROOM_WIDTHS), sD = pick(ROOM_DEPTHS), sH = pick(ROOM_HEIGHTS);
+  const startRoom = new PlaceholderRoom(`p${uid++}`, sW, sD, sH, 'north');
+  tryAdd(
+    { room: startRoom, offset: Vector3.Zero(), rotation: 0, isStart: true, isExit: false },
+    { type: 'placeholder', cx: 0, cz: 0, localW: sW, localD: sD, rotY: 0 },
+  );
 
-export function generateLevelFromBlueprint(_levelNumber: number): PlacedRoom[] {
-  const { nodes, edges } = buildMazeGraph();
-  const bp               = buildBlueprint(nodes, edges);
+  // ── Pfad-Stack ────────────────────────────────────────────────────────────
+  interface StackItem { anchor: DoorDefinition; stepsLeft: number; }
 
-  const errors = bp.validate();
-  if (errors.length > 0) {
-    console.error('Blueprint-Fehler:', errors.map(e => e.message));
-    return [];
-  }
+  const stack: StackItem[] = [{
+    anchor:    worldDoor(startRoom.doors[0], Vector3.Zero(), 0),
+    stepsLeft: 6,
+  }];
 
-  const realized = bp.realize();
-  const configs  = realizeBlueprintElements(realized, OX, OZ);
+  // Sackgasse platzieren — versucht normale Größen, dann Fallbacks
+  const placeDeadEnd = (anchor: DoorDefinition): void => {
+    const dw = doorWallForAnchor(anchor.direction);
+    const H  = pick(ROOM_HEIGHTS);
 
-  // Start: am nächsten zur Weltmitte (gx=3,gy=3 ≈ Mitte des Rasters)
-  const startGx = Math.floor(GX / 2) - 1;
-  const startGy = Math.floor(GY / 2) - 1;
-  const startNodeId = nodes.find(n => n.gx === startGx && n.gy === startGy)?.id ?? nodes[0].id;
-
-  // Exit: am weitesten vom Startknoten entfernt (BFS auf Knoten-Graph)
-  const exitNodeId = findFarthestNode(nodes, edges, startNodeId);
-
-  // Konvertieren zu PlacedRoom[]
-  const placed: PlacedRoom[] = configs.map(cfg => {
-    const id = cfg.room.id;
-    return {
-      room:     cfg.room,
-      offset:   cfg.offset,
-      rotation: cfg.rotationY,
-      isStart:  id === startNodeId,
-      isExit:   id === exitNodeId,
+    const tryRoom = (W: number, D: number): boolean => {
+      const room      = new PlaceholderRoom(`p${uid++}`, W, D, H, dw);
+      const entryDoor = room.doors.find(d => d.id === dw)!;
+      const { offset, rotation } = computeConnection(anchor, entryDoor);
+      if (!tryAdd(
+        { room, offset, rotation, isStart: false, isExit: false },
+        { type: 'placeholder', cx: offset.x, cz: offset.z, localW: W, localD: D, rotY: rotation },
+      )) return false;
+      connections.push({ x: anchor.position.x, z: anchor.position.z });
+      return true;
     };
-  });
 
-  return placed;
-}
+    for (let i = 0; i < 6; i++) {
+      if (tryRoom(pick(ROOM_WIDTHS), pick(ROOM_DEPTHS))) return;
+    }
+    for (const [W, D] of FALLBACK_SIZES) {
+      if (tryRoom(W, D)) return;
+    }
 
-// ── BFS: Farthest-Node ────────────────────────────────────────────────────────
+    // Letzter Ausweg: dünne Wandplatte, die den Korridor-Durchbruch optisch verschließt.
+    // halfD=0.1 → AABB liegt knapp außerhalb des Korridor-AABB, tryAdd gelingt fast immer.
+    const cap     = new CapWallRoom(`cap${uid++}`);
+    const capDoor = cap.doors[0];
+    const { offset: capOff, rotation: capRot } = computeConnection(anchor, capDoor);
+    tryAdd(
+      { room: cap, offset: capOff, rotation: capRot, isStart: false, isExit: false },
+      { type: 'placeholder', cx: capOff.x, cz: capOff.z, localW: 3, localD: 0.2, rotY: capRot },
+    );
+  };
 
-function findFarthestNode(nodes: Node[], edges: [number, number][], startId: string): string {
-  const idx = nodes.findIndex(n => n.id === startId);
-  if (idx < 0) return nodes[nodes.length - 1].id;
+  while (stack.length > 0 && placed.length < MAX_ROOMS) {
+    const { anchor, stepsLeft } = stack.pop()!;
 
-  // Adjazenzliste nur aus Knoten (keine Korridore)
-  const adj = new Map<number, number[]>();
-  for (let i = 0; i < nodes.length; i++) adj.set(i, []);
-  for (const [a, b] of edges) {
-    adj.get(a)!.push(b);
-    adj.get(b)!.push(a);
-  }
+    if (stepsLeft <= 0) {
+      placeDeadEnd(anchor);
+      continue;
+    }
 
-  const dist = new Array(nodes.length).fill(-1);
-  dist[idx]  = 0;
-  const queue = [idx];
-  let farthest = idx;
+    // Korridor platzieren — Raum entscheidet seine eigenen Parameter
+    const D        = pick(CORR_DEPTHS);
+    const corridor = new CorridorRoom(`c${uid++}`, { D });
+    const south    = corridor.doors.find(d => d.id === 'south')!;
+    const { offset, rotation } = computeConnection(anchor, south);
 
-  while (queue.length > 0) {
-    const cur = queue.shift()!;
-    for (const nb of adj.get(cur)!) {
-      if (dist[nb] < 0) {
-        dist[nb] = dist[cur] + 1;
-        queue.push(nb);
-        if (dist[nb] > dist[farthest]) farthest = nb;
+    if (tryAdd(
+      { room: corridor, offset, rotation, isStart: false, isExit: false },
+      { type: 'corridor', cx: offset.x, cz: offset.z, localW: 3, localD: D, rotY: rotation },
+    )) {
+      // Eintrittspunkt aufzeichnen (Süd-Durchbruch)
+      connections.push({ x: anchor.position.x, z: anchor.position.z });
+
+      // Nord-Ende: Pfad weiterführen
+      const north = worldDoor(corridor.doors.find(d => d.id === 'north')!, offset, rotation);
+      stack.push({ anchor: north, stepsLeft: stepsLeft - 1 });
+
+      // Abzweige: frische Tiefe
+      for (const door of corridor.doors) {
+        if (door.id.startsWith('branch_')) {
+          stack.push({
+            anchor:    worldDoor(door, offset, rotation),
+            stepsLeft: pick([3, 4, 4, 5, 6]),
+          });
+        }
       }
+    } else {
+      // Korridor passt nicht → direkt Sackgasse
+      placeDeadEnd(anchor);
     }
   }
 
-  return nodes[farthest].id;
+  // Alle verbleibenden offenen Enden schließen
+  while (stack.length > 0) {
+    placeDeadEnd(stack.pop()!.anchor);
+  }
+
+  return { rooms: placed, mapData, connections };
 }

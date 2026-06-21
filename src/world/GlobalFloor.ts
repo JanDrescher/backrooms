@@ -11,9 +11,9 @@ import {
 
 const T      = 0.2;
 const MAP_W  = 90;   // -45 … +45
-const MAP_D  = 90;   // -10 … +80
+const MAP_D  = 90;   // -45 … +45
 const MAP_CX = 0;
-const MAP_CZ = 35;   // (-10 + 80) / 2
+const MAP_CZ = 0;
 
 function buildCarpetTexture(scene: Scene): DynamicTexture {
   const SIZE = 512;

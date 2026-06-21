@@ -7,7 +7,7 @@
     <style>
       * { margin: 0; padding: 0; box-sizing: border-box; }
       body { background: #000; overflow: hidden; }
-      canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
+      canvas:not(#minimap) { display: block; width: 100vw; height: 100vh; touch-action: none; }
       #overlay {
         position: fixed;
         inset: 0;
@@ -25,10 +25,19 @@
       }
       #overlay h1 { font-size: 2rem; letter-spacing: 0.2em; }
       #overlay p  { opacity: 0.6; font-size: 0.9rem; }
+      #minimap {
+        position: fixed;
+        top: 12px;
+        left: 12px;
+        display: none;
+        pointer-events: none;
+        image-rendering: pixelated;
+      }
     </style>
   </head>
   <body>
     <canvas id="renderCanvas"></canvas>
+    <canvas id="minimap"></canvas>
     <div id="overlay">
       <h1>LABYRINTH</h1>
       <p>Klicken zum Starten</p>

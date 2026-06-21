@@ -143,4 +143,8 @@ export class Game {
     return this.scene;
   }
 
+  getCamera(): UniversalCamera {
+    return this.camera;
+  }
+
 }
