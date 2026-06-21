@@ -66,8 +66,12 @@ export class Minimap {
       const cols   = Math.max(1, Math.round(worldW / 3));
       const rows   = Math.max(1, Math.round(worldD / 3));
 
-      ctx.fillStyle   = r.type === 'corridor' ? '#362a10' : '#56431c';
-      ctx.strokeStyle = '#8a6b2a';
+      ctx.fillStyle   = r.type === 'corridor'    ? '#1a3020'
+                      : r.type === 'capwall'    ? '#0a1a40'
+                      :                           '#56431c';
+      ctx.strokeStyle = r.type === 'corridor'    ? '#3a8050'
+                      : r.type === 'capwall'    ? '#3060cc'
+                      :                           '#8a6b2a';
       ctx.lineWidth   = 0.6;
 
       for (let c = 0; c < cols; c++) {

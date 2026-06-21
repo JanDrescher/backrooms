@@ -9,7 +9,7 @@ import type { PlacedRoom } from "./LevelGenerator";
 // ── Minimap-Daten ────────────────────────────────────────────────────────────
 
 export interface MinimapRoom {
-  type:   'placeholder' | 'corridor';
+  type:   'placeholder' | 'corridor' | 'capwall';
   cx:     number;   // BJS-Weltmittelpunkt X
   cz:     number;   // BJS-Weltmittelpunkt Z
   localW: number;   // intrinsische Breite (X-Achse vor Rotation), in Metern
@@ -33,7 +33,7 @@ export interface LevelData {
 interface AABB { minX: number; maxX: number; minZ: number; maxZ: number; }
 
 // Grenzen des spielbaren Bereichs (GlobalFloor-Ausdehnung)
-const MAP: AABB = { minX: -45, maxX: 45, minZ: -45, maxZ: 45 };
+const MAP: AABB = { minX: -30, maxX: 30, minZ: -30, maxZ: 30 };
 
 function roomAABB(room: { halfW: number; halfD: number }, offset: Vector3, rotation: number): AABB {
   const odd = Math.round(rotation / (Math.PI / 2)) % 2 !== 0;
@@ -93,7 +93,7 @@ const CORR_DEPTHS:  readonly number[] = [9, 9, 9, 12, 12, 15];  // 3–5 Chunks
 // Fallback-Größen für Sackgassen wenn große Räume nicht passen
 const FALLBACK_SIZES: readonly [number, number][] = [[3, 6], [6, 3], [3, 3]];
 
-const MAX_ROOMS = 45;
+const MAX_ROOMS = 35;
 
 // ── Generator ─────────────────────────────────────────────────────────────────
 
@@ -126,7 +126,7 @@ export function generateLevelFromBlueprint(_level: number): LevelData {
 
   const stack: StackItem[] = [{
     anchor:    worldDoor(startRoom.doors[0], Vector3.Zero(), 0),
-    stepsLeft: 6,
+    stepsLeft: 4,
   }];
 
   // Sackgasse platzieren — versucht normale Größen, dann Fallbacks
@@ -160,7 +160,7 @@ export function generateLevelFromBlueprint(_level: number): LevelData {
     const { offset: capOff, rotation: capRot } = computeConnection(anchor, capDoor);
     tryAdd(
       { room: cap, offset: capOff, rotation: capRot, isStart: false, isExit: false },
-      { type: 'placeholder', cx: capOff.x, cz: capOff.z, localW: 3, localD: 0.2, rotY: capRot },
+      { type: 'capwall', cx: capOff.x, cz: capOff.z, localW: 3, localD: 0.2, rotY: capRot },
     );
   };
 
@@ -194,7 +194,7 @@ export function generateLevelFromBlueprint(_level: number): LevelData {
         if (door.id.startsWith('branch_')) {
           stack.push({
             anchor:    worldDoor(door, offset, rotation),
-            stepsLeft: pick([3, 4, 4, 5, 6]),
+            stepsLeft: pick([2, 2, 3, 4]),
           });
         }
       }
