@@ -74,15 +74,25 @@ export class Minimap {
                       :                           '#8a6b2a';
       ctx.lineWidth   = 0.6;
 
-      for (let c = 0; c < cols; c++) {
-        for (let ro = 0; ro < rows; ro++) {
-          const wx0 = r.cx - worldW / 2 + c * 3;
-          const wz1 = r.cz - worldD / 2 + (ro + 1) * 3;  // nördliche Kante des Chunks
-          const px  = PADDING + (wx0 - minX) * scale + gap / 2;
-          const py  = PADDING + (maxZ - wz1) * scale + gap / 2;
-          const cs  = 3 * scale - gap;
-          ctx.fillRect(px, py, cs, cs);
-          ctx.strokeRect(px + 0.3, py + 0.3, cs - 0.6, cs - 0.6);
+      if (r.type === 'capwall') {
+        // Nische: proportionales Rechteck, kein Chunk-Raster
+        const px = PADDING + (r.cx - worldW / 2 - minX) * scale;
+        const py = PADDING + (maxZ - (r.cz + worldD / 2)) * scale;
+        const pw = Math.max(3, worldW * scale);
+        const ph = Math.max(3, worldD * scale);
+        ctx.fillRect(px + 0.5, py + 0.5, pw - 1, ph - 1);
+        ctx.strokeRect(px + 0.8, py + 0.8, pw - 1.6, ph - 1.6);
+      } else {
+        for (let c = 0; c < cols; c++) {
+          for (let ro = 0; ro < rows; ro++) {
+            const wx0 = r.cx - worldW / 2 + c * 3;
+            const wz1 = r.cz - worldD / 2 + (ro + 1) * 3;  // nördliche Kante des Chunks
+            const px  = PADDING + (wx0 - minX) * scale + gap / 2;
+            const py  = PADDING + (maxZ - wz1) * scale + gap / 2;
+            const cs  = 3 * scale - gap;
+            ctx.fillRect(px, py, cs, cs);
+            ctx.strokeRect(px + 0.3, py + 0.3, cs - 0.6, cs - 0.6);
+          }
         }
       }
     }

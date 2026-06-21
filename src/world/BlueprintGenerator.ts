@@ -122,15 +122,27 @@ export function generateLevelFromBlueprint(_level: number): LevelData {
   );
 
   // ── Pfad-Stack ────────────────────────────────────────────────────────────
-  interface StackItem { anchor: DoorDefinition; stepsLeft: number; }
+  interface StackItem {
+    anchor:          DoorDefinition;
+    stepsLeft:       number;
+    isBranch:        boolean;
+    sourceCorridor?: CorridorRoom;
+    sourceDoorId?:   'north' | 'south';
+  }
 
   const stack: StackItem[] = [{
     anchor:    worldDoor(startRoom.doors[0], Vector3.Zero(), 0),
     stepsLeft: 4,
+    isBranch:  false,
   }];
 
   // Sackgasse platzieren — versucht normale Größen, dann Fallbacks
-  const placeDeadEnd = (anchor: DoorDefinition): void => {
+  const placeDeadEnd = (
+    anchor:          DoorDefinition,
+    isBranch        = false,
+    sourceCorridor?: CorridorRoom,
+    sourceDoorId?:   'north' | 'south',
+  ): void => {
     const dw = doorWallForAnchor(anchor.direction);
     const H  = pick(ROOM_HEIGHTS);
 
@@ -153,22 +165,29 @@ export function generateLevelFromBlueprint(_level: number): LevelData {
       if (tryRoom(W, D)) return;
     }
 
-    // Letzter Ausweg: dünne Wandplatte, die den Korridor-Durchbruch optisch verschließt.
-    // halfD=0.1 → AABB liegt knapp außerhalb des Korridor-AABB, tryAdd gelingt fast immer.
+    // Letzter Ausweg
+    if (!isBranch && sourceCorridor && sourceDoorId) {
+      // Korridor-Hauptpfad-Ende: Stirnwand im Korridor selbst einbauen
+      if (sourceDoorId === 'north') sourceCorridor.closeNorth();
+      else                          sourceCorridor.closeSouth();
+      return;
+    }
+
+    // Seitlicher Abzweig: Nische setzen
     const cap     = new CapWallRoom(`cap${uid++}`);
     const capDoor = cap.doors[0];
     const { offset: capOff, rotation: capRot } = computeConnection(anchor, capDoor);
     tryAdd(
       { room: cap, offset: capOff, rotation: capRot, isStart: false, isExit: false },
-      { type: 'capwall', cx: capOff.x, cz: capOff.z, localW: 3, localD: 0.2, rotY: capRot },
+      { type: 'capwall', cx: capOff.x, cz: capOff.z, localW: 3, localD: 1, rotY: capRot },
     );
   };
 
   while (stack.length > 0 && placed.length < MAX_ROOMS) {
-    const { anchor, stepsLeft } = stack.pop()!;
+    const { anchor, stepsLeft, isBranch, sourceCorridor, sourceDoorId } = stack.pop()!;
 
     if (stepsLeft <= 0) {
-      placeDeadEnd(anchor);
+      placeDeadEnd(anchor, isBranch, sourceCorridor, sourceDoorId);
       continue;
     }
 
@@ -187,7 +206,8 @@ export function generateLevelFromBlueprint(_level: number): LevelData {
 
       // Nord-Ende: Pfad weiterführen
       const north = worldDoor(corridor.doors.find(d => d.id === 'north')!, offset, rotation);
-      stack.push({ anchor: north, stepsLeft: stepsLeft - 1 });
+      stack.push({ anchor: north, stepsLeft: stepsLeft - 1, isBranch: false,
+                   sourceCorridor: corridor, sourceDoorId: 'north' });
 
       // Abzweige: frische Tiefe
       for (const door of corridor.doors) {
@@ -195,18 +215,20 @@ export function generateLevelFromBlueprint(_level: number): LevelData {
           stack.push({
             anchor:    worldDoor(door, offset, rotation),
             stepsLeft: pick([2, 2, 3, 4]),
+            isBranch:  true,
           });
         }
       }
     } else {
       // Korridor passt nicht → direkt Sackgasse
-      placeDeadEnd(anchor);
+      placeDeadEnd(anchor, isBranch, sourceCorridor, sourceDoorId);
     }
   }
 
   // Alle verbleibenden offenen Enden schließen
   while (stack.length > 0) {
-    placeDeadEnd(stack.pop()!.anchor);
+    const { anchor, isBranch, sourceCorridor, sourceDoorId } = stack.pop()!;
+    placeDeadEnd(anchor, isBranch, sourceCorridor, sourceDoorId);
   }
 
   return { rooms: placed, mapData, connections };

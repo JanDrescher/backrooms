@@ -1,4 +1,4 @@
-import { MeshBuilder, StandardMaterial, PointLight, Color3, Vector3, Animation, TransformNode, type Scene } from "@babylonjs/core";
+import { Mesh, MeshBuilder, StandardMaterial, DynamicTexture, PointLight, Color3, Vector3, Animation, TransformNode, type Scene } from "@babylonjs/core";
 import { RoomBase } from "./RoomBase";
 import type { DoorDefinition } from "./IRoom";
 import { playDoorSound } from "../audio/DoorSound";
@@ -178,6 +178,21 @@ export class PlaceholderRoom extends RoomBase {
     this.buildDoor(scene, doorPivot, wallCZ);
     this.buildBaseboards(scene, doorPivot, wallLen, leftW, rightW, baseboardMat);
     this.buildCornice(scene, corniceMat);
+    this.buildExteriorDoorTrim(scene, doorPivot, wallLen, leftW, rightW, baseboardMat, corniceMat);
+    this.buildExteriorSign(scene, doorPivot);
+
+    // Dediziertes Licht 0.5 m vor der Außenwand — gleicht die fehlende Korridorbeleuchtung aus.
+    // includedOnlyMeshes wird in load() auf this.meshes gesetzt → kein Bleeding in den Korridor.
+    // range=2.5 m → Innenwände (≥3 m entfernt) bleiben unberührt.
+    const extLightPos = this.pivotLocalPos.add(
+      RoomBase.rotY(new Vector3(this.doorOff, 2.8 * 0.85, 0), -this.pivotRotY),
+    ).add(this.outwardDir.scale(1.0));
+    const extLight = new PointLight(`${this.id}_ext_pl`, extLightPos, scene);
+    extLight.intensity = 0.65;
+    extLight.diffuse   = new Color3(0.96, 0.91, 0.60);
+    extLight.specular  = Color3.Black();
+    extLight.range     = 4.0;
+    this.trackLight(extLight);
     this.buildCeilingLamps(scene);
     this.buildRoomLighting(scene);
     this.buildDividers(scene);
@@ -349,6 +364,118 @@ export class PlaceholderRoom extends RoomBase {
       bR.material = mat;
       this.prop(bR);
     }
+  }
+
+  private buildExteriorDoorTrim(
+    scene:     Scene,
+    doorPivot: TransformNode,
+    wallLen:   number,
+    leftW:     number,
+    rightW:    number,
+    bsMat:     StandardMaterial,
+    cornMat:   StandardMaterial,
+  ): void {
+    const BS_H = 0.10, BS_D = 0.04;
+    const CN_H = 0.08, CN_D = 0.04;
+    const bsZ  = -BS_D / 2;
+    const cnZ  = -CN_D / 2;
+
+    // Referenz: Türmitte in kanonischen Pivot-Koordinaten.
+    // Der Korridor ist auf die Tür zentriert, nicht auf die Wandmitte.
+    const CORR_HW  = 3 / 2;
+    const dOff     = this.doorOff;
+    const doorLeft  = dOff - DOOR_W / 2;
+    const doorRight = dOff + DOOR_W / 2;
+
+    // Linke Scheuerleiste: Korridorrand+BS_D bis Tür-Linke-Kante
+    const outerL = dOff - CORR_HW + BS_D;
+    const wL = doorLeft - outerL;
+    if (wL > 0) {
+      const m = MeshBuilder.CreateBox(`${this.id}_ext_bs_L`,
+        { width: wL, height: BS_H, depth: BS_D }, scene);
+      m.parent   = doorPivot;
+      m.position = new Vector3((outerL + doorLeft) / 2, BS_H / 2, bsZ);
+      m.material = bsMat;
+      this.prop(m);
+    }
+
+    // Rechte Scheuerleiste: Tür-Rechte-Kante bis Korridorrand-BS_D
+    const outerR = dOff + CORR_HW - BS_D;
+    const wR = outerR - doorRight;
+    if (wR > 0) {
+      const m = MeshBuilder.CreateBox(`${this.id}_ext_bs_R`,
+        { width: wR, height: BS_H, depth: BS_D }, scene);
+      m.parent   = doorPivot;
+      m.position = new Vector3((doorRight + outerR) / 2, BS_H / 2, bsZ);
+      m.material = bsMat;
+      this.prop(m);
+    }
+
+    // Deckenleiste: Korridorbreite minus Leistendicke beidseitig, auf Türmitte zentriert
+    const cn = MeshBuilder.CreateBox(`${this.id}_ext_corn`,
+      { width: 3 - 2 * CN_D, height: CN_H, depth: CN_D }, scene);
+    cn.parent   = doorPivot;
+    cn.position = new Vector3(dOff, 2.8 - CN_H / 2, cnZ);
+    cn.material = cornMat;
+    this.prop(cn);
+  }
+
+  private buildExteriorSign(scene: Scene, doorPivot: TransformNode): void {
+    const SIGN_W = 0.45;
+    const SIGN_H = 0.22;
+    const TW = 256, TH = 128;
+
+    const SYMBOLS = [
+      'ᚠ','ᚢ','ᚦ','ᚨ','ᚱ','ᚲ','ᚷ','ᚹ','ᚾ',
+      'ᛁ','ᛃ','ᛇ','ᛈ','ᛉ','ᛊ','ᛏ','ᛒ','ᛖ','ᛗ','ᛚ','ᛞ','ᛟ',
+      '☿','♄','♃','♂','♀','☉','☽',
+      '⊕','⊗','⊙','◈','◉','◎','⊛',
+      '✦','✧','✩','✪','✭','✯','✰',
+    ];
+    const symbol = SYMBOLS[Math.floor(Math.random() * SYMBOLS.length)];
+
+    const tex = new DynamicTexture(`${this.id}_sign_tex`, { width: TW, height: TH }, scene, false);
+    const ctx = tex.getContext() as CanvasRenderingContext2D;
+
+    ctx.fillStyle = '#1c1810';
+    ctx.fillRect(0, 0, TW, TH);
+    ctx.strokeStyle = '#8a7040';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(3, 3, TW - 6, TH - 6);
+    ctx.strokeStyle = '#b09050';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(7, 7, TW - 14, TH - 14);
+
+    // Spiegelverkehrt zeichnen — korrigiert UV-Spiegelung der Rückseite bei DOUBLESIDE
+    ctx.save();
+    ctx.translate(TW, 0);
+    ctx.scale(-1, 1);
+    ctx.fillStyle    = '#d4bf6a';
+    ctx.font         = `bold ${Math.round(TH * 0.62)}px serif`;
+    ctx.textAlign    = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(symbol, TW / 2, TH / 2);
+    ctx.restore();
+    tex.update();
+
+    const mat = new StandardMaterial(`${this.id}_sign_mat`, scene);
+    mat.diffuseTexture        = tex;
+    mat.emissiveColor         = new Color3(0.18, 0.15, 0.06);
+    mat.specularColor         = Color3.Black();
+    mat.maxSimultaneousLights = 6;
+
+    // Y-Mitte zentriert zwischen Türsturz (DOOR_H=2.0) und Unterkante Deckenleiste (2.72m)
+    const signCenterY = DOOR_H + (2.72 - DOOR_H) / 2;
+
+    // DOUBLESIDE: sichtbar aus beiden Richtungen → kein Face-Culling-Problem.
+    // Keine Rotation — Rückseite (−Z = Korridor) zeigt UV spiegelverkehrt,
+    // was durch das gespiegelte Canvas-Drawing kompensiert wird.
+    const sign = MeshBuilder.CreatePlane(`${this.id}_sign`,
+      { width: SIGN_W, height: SIGN_H, sideOrientation: Mesh.DOUBLESIDE }, scene);
+    sign.parent   = doorPivot;
+    sign.position = new Vector3(this.doorOff, signCenterY, -0.05);
+    sign.material = mat;
+    this.prop(sign);
   }
 
   private buildCornice(scene: Scene, mat: StandardMaterial): void {

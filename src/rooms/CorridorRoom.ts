@@ -17,6 +17,8 @@ export class CorridorRoom extends RoomBase {
   private readonly branchSide: "east" | "west" | "both" | null;
   private readonly branchSegE: number;  // segment-Index für Ostabzweig (E-Wand, +X)
   private readonly branchSegW: number;  // segment-Index für Westabzweig (W-Wand, −X)
+  private _closeNorth = false;
+  private _closeSouth = false;
 
   constructor(id: string, opts: {
     D?: number; H?: number;
@@ -114,6 +116,9 @@ export class CorridorRoom extends RoomBase {
 
     this.buildCeilingLamps(scene);
     this.buildRoomLighting(scene);
+
+    if (this._closeNorth) this.buildEndWall(scene, 'north');
+    if (this._closeSouth) this.buildEndWall(scene, 'south');
   }
 
   private buildSideWall(
@@ -199,6 +204,40 @@ export class CorridorRoom extends RoomBase {
         this.prop(cornJ);
       }
     }
+  }
+
+  closeNorth(): void { this._closeNorth = true; }
+  closeSouth(): void { this._closeSouth = true; }
+
+  private buildEndWall(scene: Scene, side: 'north' | 'south'): void {
+    const { W, D, H } = this;
+    const WALL_H = H + T;
+    const BS_H = 0.10, BS_D = 0.04;
+    const CN_H = 0.08, CN_D = 0.04;
+    const sign  = side === 'north' ? 1 : -1;
+
+    const wallMat = this.mat(scene, `wall_${side}`, Color3.White());
+    wallMat.diffuseTexture = this.buildWallpaperTexture(
+      scene, `wall_${side}`, W / RoomBase.TILE_W, WALL_H / RoomBase.TILE_H);
+    const wall = MeshBuilder.CreateBox(`${this.id}_wall_${side}`,
+      { width: W, height: WALL_H, depth: T }, scene);
+    wall.position = new Vector3(0, WALL_H / 2, sign * (D / 2 + T / 2));
+    wall.material = wallMat;
+    this.track(wall);
+
+    const bsMat = this.mat(scene, `bs_${side}`, new Color3(0.71, 0.69, 0.42));
+    const bs = MeshBuilder.CreateBox(`${this.id}_bs_${side}`,
+      { width: W, height: BS_H, depth: BS_D }, scene);
+    bs.position = new Vector3(0, BS_H / 2, sign * (D / 2 - BS_D / 2));
+    bs.material = bsMat;
+    this.prop(bs);
+
+    const cornMat = this.mat(scene, `corn_${side}`, new Color3(0.57, 0.56, 0.48));
+    const cn = MeshBuilder.CreateBox(`${this.id}_cn_${side}`,
+      { width: W, height: CN_H, depth: CN_D }, scene);
+    cn.position = new Vector3(0, H - CN_H / 2, sign * (D / 2 - CN_D / 2));
+    cn.material = cornMat;
+    this.prop(cn);
   }
 
   private buildCeilingLamps(scene: Scene): void {
