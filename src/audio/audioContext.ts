@@ -1,4 +1,5 @@
 let _ctx: AudioContext | null = null;
+let _paused = false;
 
 export function getCtx(): AudioContext {
   if (!_ctx) {
@@ -6,14 +7,30 @@ export function getCtx(): AudioContext {
     // Browser-Autoplay-Policy: AudioContext startet "suspended" ohne User-Gesture.
     // Beim ersten Click oder Keydown entsperren.
     const unlock = () => {
-      if (_ctx && _ctx.state === "suspended") _ctx.resume();
+      if (_ctx && _ctx.state === "suspended" && !_paused) _ctx.resume();
       window.removeEventListener("click",   unlock);
       window.removeEventListener("keydown", unlock);
     };
     window.addEventListener("click",   unlock);
     window.addEventListener("keydown", unlock);
+
+    // Chrome resumt einen programmatisch suspendierten Kontext nach User-Gesture
+    // automatisch wieder — sofort erneut suspendieren wenn wir pausiert sind.
+    _ctx.addEventListener("statechange", () => {
+      if (_paused && _ctx && _ctx.state === "running") _ctx.suspend();
+    });
   }
   return _ctx;
+}
+
+export function suspendAudio(): void {
+  _paused = true;
+  if (_ctx && _ctx.state === "running") _ctx.suspend();
+}
+
+export function resumeAudio(): void {
+  _paused = false;
+  if (_ctx && _ctx.state === "suspended") _ctx.resume();
 }
 
 export function updateAudioListener(
