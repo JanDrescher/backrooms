@@ -32,8 +32,8 @@ export class PlaceholderRoom extends RoomBase {
     this.W        = width;
     this.D        = depth;
     this.H        = height;
-    this.halfW    = width  / 2 + T;
-    this.halfD    = depth  / 2 + T;
+    this.halfW    = width  / 2;
+    this.halfD    = depth  / 2;
     this.doorWall = doorWall;
 
     const wallLen = (doorWall === "north" || doorWall === "south") ? width : depth;
@@ -42,22 +42,22 @@ export class PlaceholderRoom extends RoomBase {
 
     switch (doorWall) {
       case "north":
-        this.pivotLocalPos = new Vector3(0, 0, depth / 2 + T);
+        this.pivotLocalPos = new Vector3(0, 0, depth / 2);
         this.pivotRotY     = Math.PI;
         this.outwardDir    = new Vector3(0, 0, 1);
         break;
       case "south":
-        this.pivotLocalPos = new Vector3(0, 0, -depth / 2 - T);
+        this.pivotLocalPos = new Vector3(0, 0, -depth / 2);
         this.pivotRotY     = 0;
         this.outwardDir    = new Vector3(0, 0, -1);
         break;
       case "east": // visuell rechts = +X-Wand
-        this.pivotLocalPos = new Vector3(width / 2 + T, 0, 0);
+        this.pivotLocalPos = new Vector3(width / 2, 0, 0);
         this.pivotRotY     = -Math.PI / 2;  // BJS rotY(-π/2): canonical-Z → room +X (outward)
         this.outwardDir    = new Vector3(1, 0, 0);
         break;
       default:    // "west" = visuell links = −X-Wand
-        this.pivotLocalPos = new Vector3(-width / 2 - T, 0, 0);
+        this.pivotLocalPos = new Vector3(-width / 2, 0, 0);
         this.pivotRotY     = Math.PI / 2;   // BJS rotY(+π/2): canonical-Z → room −X (outward)
         this.outwardDir    = new Vector3(-1, 0, 0);
         break;
@@ -78,17 +78,17 @@ export class PlaceholderRoom extends RoomBase {
     );
 
     this.doors = [
-      { id: "north", position: doorWall === "north" ? doorRoomPos.clone() : new Vector3(0, DOOR_H / 2,  depth / 2 + T), direction: new Vector3(0, 0,  1) },
-      { id: "south", position: doorWall === "south" ? doorRoomPos.clone() : new Vector3(0, DOOR_H / 2, -depth / 2 - T), direction: new Vector3(0, 0, -1) },
-      { id: "east",  position: doorWall === "east"  ? doorRoomPos.clone() : new Vector3( width / 2 + T, DOOR_H / 2, 0), direction: new Vector3( 1, 0, 0) },
-      { id: "west",  position: doorWall === "west"  ? doorRoomPos.clone() : new Vector3(-width / 2 - T, DOOR_H / 2, 0), direction: new Vector3(-1, 0, 0) },
+      { id: "north", position: doorWall === "north" ? doorRoomPos.clone() : new Vector3(0, DOOR_H / 2,  depth / 2), direction: new Vector3(0, 0,  1) },
+      { id: "south", position: doorWall === "south" ? doorRoomPos.clone() : new Vector3(0, DOOR_H / 2, -depth / 2), direction: new Vector3(0, 0, -1) },
+      { id: "east",  position: doorWall === "east"  ? doorRoomPos.clone() : new Vector3( width / 2, DOOR_H / 2, 0), direction: new Vector3( 1, 0, 0) },
+      { id: "west",  position: doorWall === "west"  ? doorRoomPos.clone() : new Vector3(-width / 2, DOOR_H / 2, 0), direction: new Vector3(-1, 0, 0) },
     ];
   }
 
   protected async buildGeometry(scene: Scene): Promise<void> {
     const { W, D, H, doorWall, doorOff } = this;
 
-    const wallH   = H_MAX + T;
+    const wallH   = H;
     const wallLen = (doorWall === "north" || doorWall === "south") ? W : D;
     const leftW   = doorOff + wallLen / 2 - DOOR_W / 2;
     const rightW  = wallLen / 2 - doorOff - DOOR_W / 2;
@@ -101,19 +101,13 @@ export class PlaceholderRoom extends RoomBase {
     const baseboardMat = this.mat(scene, "baseboard", new Color3(0.71, 0.69, 0.42));
     const corniceMat   = this.mat(scene, "cornice",   new Color3(0.57, 0.56, 0.48));
 
-    // Tür-Wand-Panele (kanonisch Z-Fläche, kein UV-Quirk)
+    // Tür-Wand-Panele — behalten T-Tiefe für Tür-Laibung (kanonisch Z-Fläche, kein UV-Quirk)
     const wallMatDL = this.mat(scene, "wall_dl", Color3.White());
     const wallMatDR = this.mat(scene, "wall_dr", Color3.White());
     const wallMatDT = this.mat(scene, "wall_dt", Color3.White());
     wallMatDL.diffuseTexture = this.buildWallpaperTexture(scene, "dl", leftW  / RoomBase.TILE_W, wallH / RoomBase.TILE_H);
     wallMatDR.diffuseTexture = this.buildWallpaperTexture(scene, "dr", rightW / RoomBase.TILE_W, wallH / RoomBase.TILE_H);
     wallMatDT.diffuseTexture = this.buildWallpaperTexture(scene, "dt", DOOR_W / RoomBase.TILE_W, topH  / RoomBase.TILE_H);
-
-    // Vollwände: ±Z (Nord/Süd) standard; ±X (Ost/West) mit UV-Quirk
-    const wallMatZ = this.mat(scene, "wall_z", Color3.White());
-    wallMatZ.diffuseTexture = this.buildWallpaperTexture(scene, "z", W / RoomBase.TILE_W, wallH / RoomBase.TILE_H);
-    const wallMatX = this.mat(scene, "wall_x", Color3.White());
-    wallMatX.diffuseTexture = this.buildWallpaperTexture(scene, "x", wallH / RoomBase.TILE_H, D / RoomBase.TILE_W);
 
     // ── Deckenplatten ─────────────────────────────────────────────────────────
     const { diffuse: ceilDiff, bump: ceilBump } = this.buildCeilingTileTexture(scene);
@@ -130,19 +124,23 @@ export class PlaceholderRoom extends RoomBase {
     ceil.material   = ceilMat;
     this.track(ceil);
 
-    // ── Vollwände (3 von 4, Tür-Wand wird via Pivot aufgebaut) ───────────────
+    // ── Vollwände als Planes (3 von 4, Tür-Wand via Pivot) ──────────────────
+    // Planes auf innerer Raumfläche, Normal zeigt ins Rauminnere — kein UV-Quirk.
     for (const sw of [
-      { name: "N",  skip: doorWall === "north", pos: new Vector3(0,            wallH / 2,  D / 2 + T / 2), w: W, d: T, mat: wallMatZ },
-      { name: "S",  skip: doorWall === "south", pos: new Vector3(0,            wallH / 2, -D / 2 - T / 2), w: W, d: T, mat: wallMatZ },
-      { name: "CE", skip: doorWall === "east",  pos: new Vector3( W/2 + T/2, wallH / 2, 0),               w: T, d: D, mat: wallMatX },
-      { name: "CW", skip: doorWall === "west",  pos: new Vector3(-W/2 - T/2, wallH / 2, 0),               w: T, d: D, mat: wallMatX },
-    ] as Array<{ name: string; skip: boolean; pos: Vector3; w: number; d: number; mat: StandardMaterial }>) {
+      { name: "N",  skip: doorWall === "north", x: 0,     z:  D/2, rotY: 0,             pw: W, uSc: W / RoomBase.TILE_W, vSc: wallH / RoomBase.TILE_H },
+      { name: "S",  skip: doorWall === "south", x: 0,     z: -D/2, rotY: Math.PI,       pw: W, uSc: W / RoomBase.TILE_W, vSc: wallH / RoomBase.TILE_H },
+      { name: "CE", skip: doorWall === "east",  x:  W/2,  z: 0,    rotY:  Math.PI / 2,  pw: D, uSc: D / RoomBase.TILE_W, vSc: wallH / RoomBase.TILE_H },
+      { name: "CW", skip: doorWall === "west",  x: -W/2,  z: 0,    rotY: -Math.PI / 2,  pw: D, uSc: D / RoomBase.TILE_W, vSc: wallH / RoomBase.TILE_H },
+    ] as Array<{ name: string; skip: boolean; x: number; z: number; rotY: number; pw: number; uSc: number; vSc: number }>) {
       if (sw.skip) continue;
-      const mesh = MeshBuilder.CreateBox(`${this.id}_wall_${sw.name}`,
-        { width: sw.w, height: wallH, depth: sw.d }, scene);
-      mesh.position = sw.pos;
-      mesh.material = sw.mat;
-      this.track(mesh);
+      const wMat = this.mat(scene, `wall_${sw.name}`, Color3.White());
+      wMat.diffuseTexture = this.buildWallpaperTexture(scene, sw.name, sw.uSc, sw.vSc);
+      const plane = MeshBuilder.CreatePlane(`${this.id}_wall_${sw.name}`,
+        { width: sw.pw, height: wallH }, scene);
+      plane.position   = new Vector3(sw.x, wallH / 2, sw.z);
+      plane.rotation.y = sw.rotY;
+      plane.material   = wMat;
+      this.track(plane);
     }
 
     // ── Tür-Wand via Pivot ────────────────────────────────────────────────────

@@ -127,7 +127,7 @@ export function generateLevelFromBlueprint(_level: number): LevelData {
     stepsLeft:       number;
     isBranch:        boolean;
     sourceCorridor?: CorridorRoom;
-    sourceDoorId?:   'north' | 'south';
+    sourceDoorId?:   'north' | 'south' | 'branch_east' | 'branch_west';
   }
 
   const stack: StackItem[] = [{
@@ -141,7 +141,7 @@ export function generateLevelFromBlueprint(_level: number): LevelData {
     anchor:          DoorDefinition,
     isBranch        = false,
     sourceCorridor?: CorridorRoom,
-    sourceDoorId?:   'north' | 'south',
+    sourceDoorId?:   'north' | 'south' | 'branch_east' | 'branch_west',
   ): void => {
     const dw = doorWallForAnchor(anchor.direction);
     const H  = pick(ROOM_HEIGHTS);
@@ -177,10 +177,15 @@ export function generateLevelFromBlueprint(_level: number): LevelData {
     const cap     = new CapWallRoom(`cap${uid++}`);
     const capDoor = cap.doors[0];
     const { offset: capOff, rotation: capRot } = computeConnection(anchor, capDoor);
-    tryAdd(
+    const capPlaced = tryAdd(
       { room: cap, offset: capOff, rotation: capRot, isStart: false, isExit: false },
       { type: 'capwall', cx: capOff.x, cz: capOff.z, localW: 3, localD: 1, rotY: capRot },
     );
+    if (!capPlaced && sourceCorridor) {
+      // Auch Nische passt nicht (Raum-Geometrie blockiert den Abzweig) → Öffnung schließen
+      if (sourceDoorId === 'branch_east') sourceCorridor.closeBranchEast();
+      else if (sourceDoorId === 'branch_west') sourceCorridor.closeBranchWest();
+    }
   };
 
   while (stack.length > 0 && placed.length < MAX_ROOMS) {
@@ -213,9 +218,11 @@ export function generateLevelFromBlueprint(_level: number): LevelData {
       for (const door of corridor.doors) {
         if (door.id.startsWith('branch_')) {
           stack.push({
-            anchor:    worldDoor(door, offset, rotation),
-            stepsLeft: pick([2, 2, 3, 4]),
-            isBranch:  true,
+            anchor:         worldDoor(door, offset, rotation),
+            stepsLeft:      pick([2, 2, 3, 4]),
+            isBranch:       true,
+            sourceCorridor: corridor,
+            sourceDoorId:   door.id as 'branch_east' | 'branch_west',
           });
         }
       }

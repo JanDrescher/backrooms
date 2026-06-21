@@ -62,15 +62,14 @@ export class JunctionRoom extends RoomBase {
     const bsMat    = this.mat(scene, "baseboard", new Color3(0.71, 0.69, 0.42));
     const cornMat  = this.mat(scene, "cornice",   new Color3(0.57, 0.56, 0.48));
 
-    // Z-Wände (N/S): standard UV (U = Breite, V = Höhe)
+    // Alle Wandmaterialien mit normalem UV (Planes, kein Quirk)
     const wallMatZ = this.mat(scene, "wall_z", Color3.White());
     wallMatZ.diffuseTexture = this.buildWallpaperTexture(scene, "z",
       S / RoomBase.TILE_W, wallH / RoomBase.TILE_H);
 
-    // X-Wände (E/W): UV-Quirk — bei ±X-Flächen rotieren UV-Achsen (U→Höhe, V→Tiefe)
     const wallMatX = this.mat(scene, "wall_x", Color3.White());
     wallMatX.diffuseTexture = this.buildWallpaperTexture(scene, "x",
-      wallH / RoomBase.TILE_H, S / RoomBase.TILE_W);
+      S / RoomBase.TILE_W, wallH / RoomBase.TILE_H);
 
     // Decke
     const { diffuse: ceilDiff, bump: ceilBump } = this.buildCeilingTileTexture(scene);
@@ -87,10 +86,10 @@ export class JunctionRoom extends RoomBase {
     this.track(ceil);
 
     // 4 Wände — je nach Öffnungsstatus offen oder geschlossen
-    this.buildNSWall(scene, "N",  S / 2 + T / 2, wallH, sideLen, wallMatZ, bsMat, cornMat, this.openings.has("north"));
-    this.buildNSWall(scene, "S", -S / 2 - T / 2, wallH, sideLen, wallMatZ, bsMat, cornMat, this.openings.has("south"));
-    this.buildEWWall(scene, "E",  S / 2 + T / 2, wallH, sideLen, wallMatX, bsMat, cornMat, this.openings.has("east"));
-    this.buildEWWall(scene, "W", -S / 2 - T / 2, wallH, sideLen, wallMatX, bsMat, cornMat, this.openings.has("west"));
+    this.buildNSWall(scene, "N",  S / 2, wallH, sideLen, wallMatZ, bsMat, cornMat, this.openings.has("north"));
+    this.buildNSWall(scene, "S", -S / 2, wallH, sideLen, wallMatZ, bsMat, cornMat, this.openings.has("south"));
+    this.buildEWWall(scene, "E",  S / 2, wallH, sideLen, wallMatX, bsMat, cornMat, this.openings.has("east"));
+    this.buildEWWall(scene, "W", -S / 2, wallH, sideLen, wallMatX, bsMat, cornMat, this.openings.has("west"));
 
     this.buildCeilingLamps(scene);
     this.buildRoomLighting(scene);
@@ -103,14 +102,16 @@ export class JunctionRoom extends RoomBase {
     const { S, H } = this;
     const BS_H = 0.10, BS_D = 0.04, CH = 0.04;
     const sign = cz > 0 ? 1 : -1;
+    const rotY = cz > 0 ? 0 : Math.PI;
     const bsZ  = sign * (S / 2 - BS_D / 2);
     const cnZ  = sign * (S / 2 - CH  / 2);
 
     if (!open) {
-      const m = MeshBuilder.CreateBox(`${this.id}_wall_${side}`,
-        { width: S, height: wallH, depth: T }, scene);
-      m.position = new Vector3(0, wallH / 2, cz);
-      m.material = mat;
+      const m = MeshBuilder.CreatePlane(`${this.id}_wall_${side}`,
+        { width: S, height: wallH }, scene);
+      m.position   = new Vector3(0, wallH / 2, cz);
+      m.rotation.y = rotY;
+      m.material   = mat;
       this.track(m);
 
       const bs = MeshBuilder.CreateBox(`${this.id}_bs_${side}`,
@@ -125,15 +126,15 @@ export class JunctionRoom extends RoomBase {
       cn.material = cornMat;
       this.prop(cn);
     } else if (sideLen > 0) {
-      // Zwei Seitenpanele links und rechts der Öffnung
       for (const [sfx, px] of [
         [`${side}L`, -(OPEN_W / 2 + sideLen / 2)],
         [`${side}R`,  (OPEN_W / 2 + sideLen / 2)],
       ] as [string, number][]) {
-        const m = MeshBuilder.CreateBox(`${this.id}_wall_${sfx}`,
-          { width: sideLen, height: wallH, depth: T }, scene);
-        m.position = new Vector3(px, wallH / 2, cz);
-        m.material = mat;
+        const m = MeshBuilder.CreatePlane(`${this.id}_wall_${sfx}`,
+          { width: sideLen, height: wallH }, scene);
+        m.position   = new Vector3(px, wallH / 2, cz);
+        m.rotation.y = rotY;
+        m.material   = mat;
         this.track(m);
 
         const bs = MeshBuilder.CreateBox(`${this.id}_bs_${sfx}`,
@@ -148,12 +149,7 @@ export class JunctionRoom extends RoomBase {
         cn.material = cornMat;
         this.prop(cn);
       }
-      // Sturz über Öffnung (füllt H … H+T)
-      const sz = MeshBuilder.CreateBox(`${this.id}_sturz_${side}`,
-        { width: OPEN_W, height: T, depth: T }, scene);
-      sz.position = new Vector3(0, H + T / 2, cz);
-      sz.material = bsMat;
-      this.prop(sz);
+      // Kein Sturz über Öffnung — Planes enden bündig
     }
     // sideLen === 0 → Öffnung füllt komplette Wandbreite, keine Geometrie nötig
   }
@@ -165,14 +161,16 @@ export class JunctionRoom extends RoomBase {
     const { S, H } = this;
     const BS_H = 0.10, BS_D = 0.04, CH = 0.04;
     const sign = cx > 0 ? 1 : -1;
+    const rotY = cx > 0 ?  Math.PI / 2 : -Math.PI / 2;
     const bsX  = sign * (S / 2 - BS_D / 2);
     const cnX  = sign * (S / 2 - CH  / 2);
 
     if (!open) {
-      const m = MeshBuilder.CreateBox(`${this.id}_wall_${side}`,
-        { width: T, height: wallH, depth: S }, scene);
-      m.position = new Vector3(cx, wallH / 2, 0);
-      m.material = mat;
+      const m = MeshBuilder.CreatePlane(`${this.id}_wall_${side}`,
+        { width: S, height: wallH }, scene);
+      m.position   = new Vector3(cx, wallH / 2, 0);
+      m.rotation.y = rotY;
+      m.material   = mat;
       this.track(m);
 
       const bs = MeshBuilder.CreateBox(`${this.id}_bs_${side}`,
@@ -191,10 +189,11 @@ export class JunctionRoom extends RoomBase {
         [`${side}L`, -(OPEN_W / 2 + sideLen / 2)],
         [`${side}R`,  (OPEN_W / 2 + sideLen / 2)],
       ] as [string, number][]) {
-        const m = MeshBuilder.CreateBox(`${this.id}_wall_${sfx}`,
-          { width: T, height: wallH, depth: sideLen }, scene);
-        m.position = new Vector3(cx, wallH / 2, pz);
-        m.material = mat;
+        const m = MeshBuilder.CreatePlane(`${this.id}_wall_${sfx}`,
+          { width: sideLen, height: wallH }, scene);
+        m.position   = new Vector3(cx, wallH / 2, pz);
+        m.rotation.y = rotY;
+        m.material   = mat;
         this.track(m);
 
         const bs = MeshBuilder.CreateBox(`${this.id}_bs_${sfx}`,
@@ -209,11 +208,7 @@ export class JunctionRoom extends RoomBase {
         cn.material = cornMat;
         this.prop(cn);
       }
-      const sz = MeshBuilder.CreateBox(`${this.id}_sturz_${side}`,
-        { width: T, height: T, depth: OPEN_W }, scene);
-      sz.position = new Vector3(cx, H + T / 2, 0);
-      sz.material = bsMat;
-      this.prop(sz);
+      // Kein Sturz — Planes enden bündig an der Öffnung
     }
   }
 

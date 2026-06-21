@@ -17,8 +17,10 @@ export class CorridorRoom extends RoomBase {
   private readonly branchSide: "east" | "west" | "both" | null;
   private readonly branchSegE: number;  // segment-Index für Ostabzweig (E-Wand, +X)
   private readonly branchSegW: number;  // segment-Index für Westabzweig (W-Wand, −X)
-  private _closeNorth = false;
-  private _closeSouth = false;
+  private _closeNorth   = false;
+  private _closeSouth   = false;
+  private _closedBranchE = false;
+  private _closedBranchW = false;
 
   constructor(id: string, opts: {
     D?: number; H?: number;
@@ -33,7 +35,7 @@ export class CorridorRoom extends RoomBase {
     const depths  = [9, 12, 15] as const;
     this.D = opts.D ?? depths[Math.floor(Math.random() * depths.length)];
     this.H = opts.H ?? 2.8;
-    this.halfW = this.W / 2 + T;  // Seitenwände: 1,7 m
+    this.halfW = this.W / 2;
     this.halfD = this.D / 2;       // Enden offen
 
     const numSegs = this.D / 3;
@@ -81,12 +83,12 @@ export class CorridorRoom extends RoomBase {
     // +X = Osten = rechts, −X = Westen = links
     if (branchSide === "east" || branchSide === "both") {
       this.doors.push({ id: "branch_east",
-        position:  new Vector3( (this.W / 2 + T), H / 2, -D / 2 + branchSegE * 3 + 1.5),
+        position:  new Vector3( this.W / 2, H / 2, -D / 2 + branchSegE * 3 + 1.5),
         direction: new Vector3( 1, 0, 0) });
     }
     if (branchSide === "west" || branchSide === "both") {
       this.doors.push({ id: "branch_west",
-        position:  new Vector3(-(this.W / 2 + T), H / 2, -D / 2 + branchSegW * 3 + 1.5),
+        position:  new Vector3(-this.W / 2, H / 2, -D / 2 + branchSegW * 3 + 1.5),
         direction: new Vector3(-1, 0, 0) });
     }
   }
@@ -111,8 +113,8 @@ export class CorridorRoom extends RoomBase {
     ceil.material   = ceilMat;
     this.track(ceil);
 
-    this.buildSideWall(scene, "E",  W / 2 + T / 2,  W / 2, bsMat, cornMat);
-    this.buildSideWall(scene, "W", -W / 2 - T / 2, -W / 2, bsMat, cornMat);
+    this.buildSideWall(scene, "E", bsMat, cornMat);
+    this.buildSideWall(scene, "W", bsMat, cornMat);
 
     this.buildCeilingLamps(scene);
     this.buildRoomLighting(scene);
@@ -123,46 +125,48 @@ export class CorridorRoom extends RoomBase {
 
   private buildSideWall(
     scene:   Scene,
-    side:    string,
-    wallX:   number,
-    innerX:  number,
+    side:    "E" | "W",
     bsMat:   StandardMaterial,
     cornMat: StandardMaterial,
   ): void {
-    const { D, H, branchSide, branchSegE, branchSegW } = this;
-    const wallH  = H + T;
+    const { W, D, H, branchSide, branchSegE, branchSegW } = this;
+    const wallH  = H;
     const BS_H   = 0.10, BS_D  = 0.04;
     const CORN_H = 0.08, CORN_D = 0.04;
-    const bsX   = innerX > 0 ? innerX - BS_D   / 2 : innerX + BS_D   / 2;
-    const cornX = innerX > 0 ? innerX - CORN_D / 2 : innerX + CORN_D / 2;
+    const isEast = side === "E";
+    const planeX = isEast ?  W / 2 : -W / 2;
+    const rotY   = isEast ?  Math.PI / 2 : -Math.PI / 2;
+    const bsX    = isEast ? planeX - BS_D / 2   : planeX + BS_D / 2;
+    const cornX  = isEast ? planeX - CORN_D / 2 : planeX + CORN_D / 2;
 
-    // E-Wand (+X) = Ostabzweig; W-Wand (−X) = Westabzweig
     const isEastBranch = branchSide === "east" || branchSide === "both";
     const isWestBranch = branchSide === "west" || branchSide === "both";
-    const hasBranch = (side === "E" && isEastBranch) || (side === "W" && isWestBranch);
-    const branchSeg = side === "E" ? branchSegE : branchSegW;
+    const hasBranch = (isEast  && isEastBranch && !this._closedBranchE)
+                   || (!isEast && isWestBranch && !this._closedBranchW);
+    const branchSeg = isEast ? branchSegE : branchSegW;
 
-    const buildPanel = (panelId: string, depth: number, cz: number) => {
+    const buildPanel = (panelId: string, panelLen: number, cz: number) => {
       const wallMat = this.mat(scene, `wall_${panelId}`, Color3.White());
       wallMat.diffuseTexture = this.buildWallpaperTexture(
         scene, `wall_${panelId}`,
-        wallH / RoomBase.TILE_H,
-        depth / RoomBase.TILE_W,
+        panelLen / RoomBase.TILE_W,
+        wallH    / RoomBase.TILE_H,
       );
-      const wall = MeshBuilder.CreateBox(`${this.id}_wall_${panelId}`,
-        { width: T, height: wallH, depth }, scene);
-      wall.position = new Vector3(wallX, wallH / 2, cz);
-      wall.material = wallMat;
-      this.track(wall);
+      const plane = MeshBuilder.CreatePlane(`${this.id}_wall_${panelId}`,
+        { width: panelLen, height: wallH }, scene);
+      plane.position  = new Vector3(planeX, wallH / 2, cz);
+      plane.rotation.y = rotY;
+      plane.material  = wallMat;
+      this.track(plane);
 
       const bs = MeshBuilder.CreateBox(`${this.id}_bs_${panelId}`,
-        { width: BS_D, height: BS_H, depth }, scene);
+        { width: BS_D, height: BS_H, depth: panelLen }, scene);
       bs.position = new Vector3(bsX, BS_H / 2, cz);
       bs.material = bsMat;
       this.prop(bs);
 
       const corn = MeshBuilder.CreateBox(`${this.id}_corn_${panelId}`,
-        { width: CORN_D, height: CORN_H, depth }, scene);
+        { width: CORN_D, height: CORN_H, depth: panelLen }, scene);
       corn.position = new Vector3(cornX, H - CORN_H / 2, cz);
       corn.material = cornMat;
       this.prop(corn);
@@ -173,69 +177,47 @@ export class CorridorRoom extends RoomBase {
     } else {
       const leftLen  = branchSeg * 3;
       const rightLen = D - (branchSeg + 1) * 3;
-      if (leftLen > 0) buildPanel(`${side}_L`, leftLen, -D / 2 + leftLen / 2);
-      if (rightLen > 0) buildPanel(`${side}_R`, rightLen, D / 2 - rightLen / 2);
-
-      const sturzZ = -D / 2 + branchSeg * 3 + 1.5;
-      const sturz = MeshBuilder.CreateBox(`${this.id}_sturz_${side}`,
-        { width: T, height: T, depth: 3 }, scene);
-      sturz.position = new Vector3(wallX, H + T / 2, sturzZ);
-      sturz.material = bsMat;
-      this.prop(sturz);
-
-      for (const [tag, jambZ, signZ] of [
-        ["jS", sturzZ - 1.5, +1],
-        ["jN", sturzZ + 1.5, -1],
-      ] as const) {
-        const sign  = innerX > 0 ? 1 : -1;
-        const bsJX  = wallX - sign * BS_D   / 2;
-        const cornJX = wallX - sign * CORN_D / 2;
-
-        const bsJ = MeshBuilder.CreateBox(`${this.id}_bs_${side}_${tag}`,
-          { width: T + BS_D, height: BS_H, depth: BS_D }, scene);
-        bsJ.position = new Vector3(bsJX, BS_H / 2, jambZ + signZ * BS_D / 2);
-        bsJ.material = bsMat;
-        this.prop(bsJ);
-
-        const cornJ = MeshBuilder.CreateBox(`${this.id}_corn_${side}_${tag}`,
-          { width: T + CORN_D, height: CORN_H, depth: CORN_D }, scene);
-        cornJ.position = new Vector3(cornJX, H - CORN_H / 2, jambZ + signZ * CORN_D / 2);
-        cornJ.material = cornMat;
-        this.prop(cornJ);
-      }
+      if (leftLen  > 0) buildPanel(`${side}_L`, leftLen,  -D / 2 + leftLen / 2);
+      if (rightLen > 0) buildPanel(`${side}_R`, rightLen,  D / 2 - rightLen / 2);
+      // Kein Sturz, keine Laibung — Planes enden bündig an der Öffnung
     }
   }
 
   closeNorth(): void { this._closeNorth = true; }
   closeSouth(): void { this._closeSouth = true; }
+  closeBranchEast(): void { this._closedBranchE = true; }
+  closeBranchWest(): void { this._closedBranchW = true; }
 
   private buildEndWall(scene: Scene, side: 'north' | 'south'): void {
     const { W, D, H } = this;
-    const WALL_H = H + T;
+    const wallH = H;
     const BS_H = 0.10, BS_D = 0.04;
     const CN_H = 0.08, CN_D = 0.04;
     const sign  = side === 'north' ? 1 : -1;
+    const planeZ = sign * D / 2;
+    const rotY   = side === 'north' ? 0 : Math.PI;
 
     const wallMat = this.mat(scene, `wall_${side}`, Color3.White());
     wallMat.diffuseTexture = this.buildWallpaperTexture(
-      scene, `wall_${side}`, W / RoomBase.TILE_W, WALL_H / RoomBase.TILE_H);
-    const wall = MeshBuilder.CreateBox(`${this.id}_wall_${side}`,
-      { width: W, height: WALL_H, depth: T }, scene);
-    wall.position = new Vector3(0, WALL_H / 2, sign * (D / 2 + T / 2));
-    wall.material = wallMat;
-    this.track(wall);
+      scene, `wall_${side}`, W / RoomBase.TILE_W, wallH / RoomBase.TILE_H);
+    const plane = MeshBuilder.CreatePlane(`${this.id}_wall_${side}`,
+      { width: W, height: wallH }, scene);
+    plane.position  = new Vector3(0, wallH / 2, planeZ);
+    plane.rotation.y = rotY;
+    plane.material  = wallMat;
+    this.track(plane);
 
     const bsMat = this.mat(scene, `bs_${side}`, new Color3(0.71, 0.69, 0.42));
     const bs = MeshBuilder.CreateBox(`${this.id}_bs_${side}`,
       { width: W, height: BS_H, depth: BS_D }, scene);
-    bs.position = new Vector3(0, BS_H / 2, sign * (D / 2 - BS_D / 2));
+    bs.position = new Vector3(0, BS_H / 2, planeZ - sign * BS_D / 2);
     bs.material = bsMat;
     this.prop(bs);
 
     const cornMat = this.mat(scene, `corn_${side}`, new Color3(0.57, 0.56, 0.48));
     const cn = MeshBuilder.CreateBox(`${this.id}_cn_${side}`,
       { width: W, height: CN_H, depth: CN_D }, scene);
-    cn.position = new Vector3(0, H - CN_H / 2, sign * (D / 2 - CN_D / 2));
+    cn.position = new Vector3(0, H - CN_H / 2, planeZ - sign * CN_D / 2);
     cn.material = cornMat;
     this.prop(cn);
   }

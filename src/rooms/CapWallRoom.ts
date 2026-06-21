@@ -11,7 +11,7 @@ export class CapWallRoom extends RoomBase {
   readonly id: string;
   readonly doors: DoorDefinition[];
   readonly spawnPoint = Vector3.Zero();
-  readonly halfW = W / 2 + T;  // 1.7m
+  readonly halfW = W / 2;
   readonly halfD = D / 2;       // 1.0m — AABB beginnt exakt am Korridorende, tryAdd() gelingt immer
 
   constructor(id: string) {
@@ -48,25 +48,22 @@ export class CapWallRoom extends RoomBase {
     ceil.material   = ceilMat;
     this.track(ceil);
 
-    // ── Wände (Hinterwand + links + rechts) ──────────────────────────────────
-    // Z-Flächen: normales UV (U=Breite, V=Höhe)
-    // X-Flächen: UV-Quirk (U=Höhe, V=Tiefe)
+    // ── Wände als Planes (Hinterwand + links + rechts) ───────────────────────
+    // Alle Planes mit normalem UV (kein Quirk), Normal zeigt ins Rauminnere.
     const wallConfigs = [
-      { name: 'B', w: W, d: T, x: 0,          z: D/2 + T/2,
-        uSc: W     / RoomBase.TILE_W, vSc: WALL_H / RoomBase.TILE_H },
-      { name: 'L', w: T, d: D, x: -W/2 - T/2, z: 0,
-        uSc: WALL_H / RoomBase.TILE_H, vSc: D      / RoomBase.TILE_W },
-      { name: 'R', w: T, d: D, x:  W/2 + T/2, z: 0,
-        uSc: WALL_H / RoomBase.TILE_H, vSc: D      / RoomBase.TILE_W },
+      { name: 'B', x: 0,     z:  D/2, rotY: 0,              pw: W, uSc: W / RoomBase.TILE_W, vSc: WALL_H / RoomBase.TILE_H },
+      { name: 'L', x: -W/2,  z:  0,   rotY: -Math.PI / 2,  pw: D, uSc: D / RoomBase.TILE_W, vSc: WALL_H / RoomBase.TILE_H },
+      { name: 'R', x:  W/2,  z:  0,   rotY:  Math.PI / 2,  pw: D, uSc: D / RoomBase.TILE_W, vSc: WALL_H / RoomBase.TILE_H },
     ];
     for (const c of wallConfigs) {
       const mat = this.mat(scene, `wall_${c.name}`, Color3.White());
       mat.diffuseTexture = this.buildWallpaperTexture(scene, `wall_${c.name}`, c.uSc, c.vSc);
-      const wall = MeshBuilder.CreateBox(`${this.id}_wall_${c.name}`,
-        { width: c.w, height: WALL_H, depth: c.d }, scene);
-      wall.position = new Vector3(c.x, WALL_H / 2, c.z);
-      wall.material = mat;
-      this.track(wall);
+      const plane = MeshBuilder.CreatePlane(`${this.id}_wall_${c.name}`,
+        { width: c.pw, height: WALL_H }, scene);
+      plane.position  = new Vector3(c.x, WALL_H / 2, c.z);
+      plane.rotation.y = c.rotY;
+      plane.material  = mat;
+      this.track(plane);
     }
 
     // ── Scheuerleisten (3 Wände) ─────────────────────────────────────────────
