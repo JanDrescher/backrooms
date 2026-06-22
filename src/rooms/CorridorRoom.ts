@@ -35,7 +35,7 @@ export class CorridorRoom extends RoomBase {
     const depths  = [9, 12, 15] as const;
     this.D = opts.D ?? depths[Math.floor(Math.random() * depths.length)];
     this.H = opts.H ?? 2.8;
-    this.halfW = this.W / 2;
+    this.halfW = this.W / 2 + T;
     this.halfD = this.D / 2;       // Enden offen
 
     const numSegs = this.D / 3;
@@ -83,12 +83,12 @@ export class CorridorRoom extends RoomBase {
     // +X = Osten = rechts, −X = Westen = links
     if (branchSide === "east" || branchSide === "both") {
       this.doors.push({ id: "branch_east",
-        position:  new Vector3( this.W / 2, H / 2, -D / 2 + branchSegE * 3 + 1.5),
+        position:  new Vector3( this.W / 2 + T, H / 2, -D / 2 + branchSegE * 3 + 1.5),
         direction: new Vector3( 1, 0, 0) });
     }
     if (branchSide === "west" || branchSide === "both") {
       this.doors.push({ id: "branch_west",
-        position:  new Vector3(-this.W / 2, H / 2, -D / 2 + branchSegW * 3 + 1.5),
+        position:  new Vector3(-(this.W / 2 + T), H / 2, -D / 2 + branchSegW * 3 + 1.5),
         direction: new Vector3(-1, 0, 0) });
     }
   }
@@ -179,7 +179,71 @@ export class CorridorRoom extends RoomBase {
       const rightLen = D - (branchSeg + 1) * 3;
       if (leftLen  > 0) buildPanel(`${side}_L`, leftLen,  -D / 2 + leftLen / 2);
       if (rightLen > 0) buildPanel(`${side}_R`, rightLen,  D / 2 - rightLen / 2);
-      // Kein Sturz, keine Laibung — Planes enden bündig an der Öffnung
+
+      const openZ_S = -D / 2 + branchSeg * 3;
+      const openZ_N = openZ_S + 3;
+      const sturzZ  = openZ_S + 1.5;
+
+      // Sturz + Laibung zeigen nach außen (in den Abzweig, weg vom Korridor-Inneren).
+      // sturzX = wallX des alten Box-Systems: Innenfläche bündig mit Wandplane (planeX),
+      // Außenfläche bei planeX ± T.
+      const sturzX = isEast ? planeX + T / 2 : planeX - T / 2;
+
+      // Sturz: T×T Balken über der Öffnung
+      const sturz = MeshBuilder.CreateBox(`${this.id}_sturz_${side}`,
+        { width: T, height: T, depth: 3 }, scene);
+      sturz.position = new Vector3(sturzX, H + T / 2, sturzZ);
+      sturz.material = bsMat;
+      this.prop(sturz);
+
+      // Laibung: Planes an den Öffnungskanten mit Wandtextur.
+      // Süd-Laibung bei openZ_S zeigt nach Norden (+Z) in die Öffnung → rotY = π.
+      // Nord-Laibung bei openZ_N zeigt nach Süden (−Z) in die Öffnung → rotY = 0.
+      const laibMat = this.mat(scene, `laib_${side}`, Color3.White());
+      laibMat.diffuseTexture = this.buildWallpaperTexture(
+        scene, `laib_${side}`,
+        T / RoomBase.TILE_W,
+        H / RoomBase.TILE_H,
+      );
+      for (const [tag, edgeZ, rotY] of [
+        ['jS', openZ_S, Math.PI],
+        ['jN', openZ_N, 0],
+      ] as [string, number, number][]) {
+        const laib = MeshBuilder.CreatePlane(`${this.id}_laibung_${side}_${tag}`,
+          { width: T, height: H }, scene);
+        laib.position   = new Vector3(sturzX, H / 2, edgeZ);
+        laib.rotation.y = rotY;
+        laib.material   = laibMat;
+        this.prop(laib);
+      }
+
+      // Anschluss-Leisten an Süd- und Nordkante der Öffnung
+      for (const [tag, edgeZ, signZ] of [
+        ['jS', openZ_S, +1],
+        ['jN', openZ_N, -1],
+      ] as [string, number, number][]) {
+        // Anschluss-Scheuerleiste: T+BS_D breit, Innenkante bündig mit Wandplane
+        const bsJ = MeshBuilder.CreateBox(`${this.id}_bs_${side}_${tag}`,
+          { width: T + BS_D, height: BS_H, depth: BS_D }, scene);
+        bsJ.position = new Vector3(
+          isEast ? sturzX - BS_D / 2 : sturzX + BS_D / 2,
+          BS_H / 2,
+          edgeZ + signZ * BS_D / 2,
+        );
+        bsJ.material = bsMat;
+        this.prop(bsJ);
+
+        // Anschluss-Deckenleiste: T+CORN_D breit, Innenkante bündig mit Wandplane
+        const cornJ = MeshBuilder.CreateBox(`${this.id}_corn_${side}_${tag}`,
+          { width: T + CORN_D, height: CORN_H, depth: CORN_D }, scene);
+        cornJ.position = new Vector3(
+          isEast ? sturzX - CORN_D / 2 : sturzX + CORN_D / 2,
+          H - CORN_H / 2,
+          edgeZ + signZ * CORN_D / 2,
+        );
+        cornJ.material = cornMat;
+        this.prop(cornJ);
+      }
     }
   }
 

@@ -24,6 +24,9 @@ export class Game {
   private camera!: UniversalCamera;
   private rooms: IRoom[] = [];
   private floorMeshes: AbstractMesh[] = [];
+  private _noClip    = false;
+  private _noClipSeq = 0;
+  private _noClipHUD: HTMLElement | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     this.engine = new Engine(canvas, true, { preserveDrawingBuffer: true });
@@ -70,7 +73,7 @@ export class Game {
 
     // Y-Position nach jedem Frame einrasten — kein applyGravity nötig
     this.scene.registerAfterRender(() => {
-      this.camera.position.y = EYE_HEIGHT;
+      if (!this._noClip) this.camera.position.y = EYE_HEIGHT;
       // Spatial-Audio-Listener synchron zur Kamera halten
       const p = this.camera.position;
       const t = this.camera.target;
@@ -81,6 +84,7 @@ export class Game {
 
     window.addEventListener("keydown", (e) => {
       if (e.code === "KeyE") this.tryInteract();
+      this.handleNoClipSeq(e.code);
     });
   }
 
@@ -98,6 +102,35 @@ export class Game {
       }
     }
     nearest?.interact(pos);
+  }
+
+  private handleNoClipSeq(code: string): void {
+    if (code === "KeyN") {
+      this._noClipSeq = 1;
+    } else if (this._noClipSeq === 1 && code === "KeyC") {
+      this._noClipSeq = 0;
+      this.toggleNoClip();
+    } else {
+      this._noClipSeq = 0;
+    }
+  }
+
+  private toggleNoClip(): void {
+    this._noClip = !this._noClip;
+    this.camera.checkCollisions = !this._noClip;
+
+    if (!this._noClipHUD) {
+      const hud = document.createElement("div");
+      hud.style.cssText =
+        "position:fixed;top:12px;right:12px;color:#ff4444;" +
+        "font:bold 13px monospace;background:rgba(0,0,0,0.6);" +
+        "padding:4px 10px;border:1px solid #ff4444;" +
+        "border-radius:4px;pointer-events:none;z-index:9999";
+      hud.textContent = "NO CLIP";
+      document.body.appendChild(hud);
+      this._noClipHUD = hud;
+    }
+    this._noClipHUD.style.display = this._noClip ? "block" : "none";
   }
 
   focusCanvas(): void {

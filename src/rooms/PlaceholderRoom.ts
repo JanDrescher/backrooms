@@ -88,7 +88,9 @@ export class PlaceholderRoom extends RoomBase {
   protected async buildGeometry(scene: Scene): Promise<void> {
     const { W, D, H, doorWall, doorOff } = this;
 
-    const wallH   = H;
+    // Alle Außenwände auf H_MAX+T — verhindert Lücken neben höheren Korridoren.
+    // Exterior-Elemente (Sign, Leisten) nutzen feste Y-Werte und sind unberührt.
+    const wallH   = H_MAX + T;
     const wallLen = (doorWall === "north" || doorWall === "south") ? W : D;
     const leftW   = doorOff + wallLen / 2 - DOOR_W / 2;
     const rightW  = wallLen / 2 - doorOff - DOOR_W / 2;
@@ -118,10 +120,17 @@ export class PlaceholderRoom extends RoomBase {
     ceilMat.bumpTexture.level = 0.35;
 
     // ── Decke ────────────────────────────────────────────────────────────────
-    const ceil = MeshBuilder.CreateBox(`${this.id}_ceil`,
-      { width: W, height: T, depth: D }, scene);
-    ceil.position.y = H + T / 2;
-    ceil.material   = ceilMat;
+    // Auf der Türwand-Seite endet die Decke an der Innenfläche der Wand (Außenfläche − T),
+    // damit kein Z-Fighting mit der Außenfläche des Türwand-Quaders entsteht.
+    const ceilW = (doorWall === "east"  || doorWall === "west" ) ? W - T : W;
+    const ceilD = (doorWall === "north" || doorWall === "south") ? D - T : D;
+    const ceilX = doorWall === "east"  ? -T / 2 : doorWall === "west"  ? T / 2 : 0;
+    const ceilZ = doorWall === "north" ? -T / 2 : doorWall === "south" ? T / 2 : 0;
+    // 0.02 m Rückzug auf jeder Seite — Deckenleiste (0.04 m) überdeckt den Rückzug.
+    const ceil  = MeshBuilder.CreateBox(`${this.id}_ceil`,
+      { width: ceilW - 0.04, height: T, depth: ceilD - 0.04 }, scene);
+    ceil.position.set(ceilX, H + T / 2, ceilZ);
+    ceil.material = ceilMat;
     this.track(ceil);
 
     // ── Vollwände als Planes (3 von 4, Tür-Wand via Pivot) ──────────────────
@@ -477,15 +486,33 @@ export class PlaceholderRoom extends RoomBase {
   }
 
   private buildCornice(scene: Scene, mat: StandardMaterial): void {
-    const { W, D, H } = this;
+    const { W, D, H, doorWall } = this;
     const CH = 0.04, CD = 0.04;
     const cy = H - CH / 2;
 
+    // Türwand-Seite: Deckenleiste an der Innenfläche (Außenfläche − T).
+    // Nicht-Türwand-Seiten: 0.001 m Versatz verhindert Z-Fighting mit
+    // der Wand-Plane eines benachbarten Korridors auf gleicher X/Z-Position.
+    const GAP  = 0.001;
+    const nZ   = doorWall === "north" ?  D / 2 - T - CD / 2 :  D / 2 - CD / 2 - GAP;
+    const sZ   = doorWall === "south" ? -D / 2 + T + CD / 2 : -D / 2 + CD / 2 + GAP;
+    const ceX  = doorWall === "east"  ?  W / 2 - T - CD / 2 :  W / 2 - CD / 2 - GAP;
+    const cwX  = doorWall === "west"  ? -W / 2 + T + CD / 2 : -W / 2 + CD / 2 + GAP;
+
+    // N/S-Leisten verkürzen, wenn Türwand Ost/West ist (sonst ragen sie in den Wandquader).
+    // CE/CW-Leisten verkürzen, wenn Türwand Nord/Süd ist.
+    // Zusätzlich je 0.001 m kürzer auf jeder Seite — verhindert Z-Fighting
+    // an den Längsenden, wenn ein Nachbarraum seine Wand-Plane dort hat.
+    const nsW  = (doorWall === "east"  || doorWall === "west" ) ? W - T - 0.002 : W - 0.002;
+    const nsX  = doorWall === "east" ? -T / 2 : doorWall === "west" ? T / 2 : 0;
+    const ceD  = (doorWall === "north" || doorWall === "south") ? D - T - 0.002 : D - 0.002;
+    const ceZc = doorWall === "north" ? -T / 2 : doorWall === "south" ? T / 2 : 0;
+
     for (const c of [
-      { s: "N",  pos: new Vector3(0,              cy,  D/2 - CD/2), w: W,  d: CD },
-      { s: "S",  pos: new Vector3(0,              cy, -D/2 + CD/2), w: W,  d: CD },
-      { s: "CE", pos: new Vector3( W/2 - CD/2, cy, 0),              w: CD, d: D  },
-      { s: "CW", pos: new Vector3(-W/2 + CD/2, cy, 0),              w: CD, d: D  },
+      { s: "N",  pos: new Vector3(nsX, cy, nZ  ), w: nsW, d: CD  },
+      { s: "S",  pos: new Vector3(nsX, cy, sZ  ), w: nsW, d: CD  },
+      { s: "CE", pos: new Vector3(ceX, cy, ceZc), w: CD,  d: ceD },
+      { s: "CW", pos: new Vector3(cwX, cy, ceZc), w: CD,  d: ceD },
     ] as Array<{ s: string; pos: Vector3; w: number; d: number }>) {
       const mesh = MeshBuilder.CreateBox(`${this.id}_cornice_${c.s}`,
         { width: c.w, height: CH, depth: c.d }, scene);
@@ -571,7 +598,7 @@ export class PlaceholderRoom extends RoomBase {
 
         if (dir === "N" || dir === "S") {
           const toWall  = dir === "N" ? distN : distS;
-          const stubLen = toWall - COL_S / 2;
+          const stubLen = toWall - COL_S / 2 - 0.01;
           const signZ   = dir === "N" ? 1 : -1;
           const stubCZ  = colZ + signZ * (COL_S / 2 + stubLen / 2);
           const stub = MeshBuilder.CreateBox(`${this.id}_stub_${ix}_${iz}`,
@@ -587,7 +614,7 @@ export class PlaceholderRoom extends RoomBase {
           }
         } else {
           const toWall  = dir === "W" ? distW : distE;
-          const stubLen = toWall - COL_S / 2;
+          const stubLen = toWall - COL_S / 2 - 0.01;
           const signX   = dir === "W" ? -1 : 1;
           const stubCX  = colX + signX * (COL_S / 2 + stubLen / 2);
           const stub = MeshBuilder.CreateBox(`${this.id}_stub_${ix}_${iz}`,
