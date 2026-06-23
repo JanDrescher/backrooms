@@ -94,10 +94,11 @@ const CORR_DEPTHS:  readonly number[] = [9, 9, 9, 12, 12, 15];  // 3–5 Chunks
 const FALLBACK_SIZES: readonly [number, number][] = [[3, 6], [6, 3], [3, 3]];
 
 const MAX_ROOMS = 35;
+const MIN_ROOMS = 5;
 
 // ── Generator ─────────────────────────────────────────────────────────────────
 
-export function generateLevelFromBlueprint(_level: number): LevelData {
+function tryGenerate(): LevelData {
   const placed:      PlacedRoom[]         = [];
   const aabbs:       AABB[]               = [];
   const mapData:     MinimapRoom[]         = [];
@@ -239,4 +240,10 @@ export function generateLevelFromBlueprint(_level: number): LevelData {
   }
 
   return { rooms: placed, mapData, connections };
+}
+
+export function generateLevelFromBlueprint(_level: number): LevelData {
+  let result: LevelData;
+  do { result = tryGenerate(); } while (result.rooms.length < MIN_ROOMS);
+  return result;
 }
