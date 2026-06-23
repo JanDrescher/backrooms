@@ -1,4 +1,5 @@
 import { Mesh, MeshBuilder, StandardMaterial, DynamicTexture, PointLight, Color3, Vector3, Animation, TransformNode, type Scene } from "@babylonjs/core";
+import { buildDesk } from "../furniture/Desk";
 import { RoomBase } from "./RoomBase";
 import type { DoorDefinition } from "./IRoom";
 import { playDoorSound } from "../audio/DoorSound";
@@ -203,6 +204,7 @@ export class PlaceholderRoom extends RoomBase {
     this.buildCeilingLamps(scene);
     this.buildRoomLighting(scene);
     this.buildDividers(scene);
+    this.buildFurniture(scene);
   }
 
   private buildDoorFrame(scene: Scene, doorPivot: TransformNode, wallCZ: number, mat: StandardMaterial): void {
@@ -630,6 +632,62 @@ export class PlaceholderRoom extends RoomBase {
           }
         }
       }
+    }
+  }
+
+  private buildFurniture(scene: Scene): void {
+    if (Math.random() > 0.80) return;
+    const { W, D, doorWall, doorOff } = this;
+    const chunksX     = W / 3;
+    const chunksZ     = D / 3;
+    const totalChunks = chunksX * chunksZ;
+
+    // Tür-Chunk ausschließen
+    const wallLen = (doorWall === 'north' || doorWall === 'south') ? W : D;
+    const doorSeg = Math.round((doorOff + wallLen / 2 - 1.5) / 3);
+    let doorIx: number, doorIz: number;
+    switch (doorWall) {
+      case 'north': doorIx = chunksX - 1 - doorSeg; doorIz = chunksZ - 1; break;
+      case 'south': doorIx = doorSeg;                doorIz = 0;           break;
+      case 'east':  doorIx = chunksX - 1;            doorIz = doorSeg;     break;
+      default:      doorIx = 0;                      doorIz = chunksZ - 1 - doorSeg; break;
+    }
+    const isDoor = (i: number, k: number) => i === doorIx && k === doorIz;
+
+    // Kandidaten-Chunks sammeln
+    const candidates: [number, number][] = [];
+    for (let i = 0; i < chunksX; i++)
+      for (let k = 0; k < chunksZ; k++)
+        if (!isDoor(i, k) && (chunksX <= 2 && chunksZ <= 2
+            || i === 0 || i === chunksX - 1 || k === 0 || k === chunksZ - 1))
+          candidates.push([i, k]);
+
+    if (candidates.length === 0) return;
+
+    // Shuffle
+    for (let i = candidates.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+    }
+
+    // Anzahl: 1 für kleine Räume, bis 3 für große
+    const maxDesks = Math.min(3, Math.max(1, Math.round(totalChunks / 4)));
+    const count    = Math.min(candidates.length, 1 + Math.floor(Math.random() * maxDesks));
+
+    for (let d = 0; d < count; d++) {
+      const [ix, iz] = candidates[d];
+      const cx = -W / 2 + 1.5 + ix * 3 + (Math.random() - 0.5) * 1.0;
+      const cz = -D / 2 + 1.5 + iz * 3 + (Math.random() - 0.5) * 1.0;
+      const node = new TransformNode(`${this.id}_desk_${d}`, scene);
+      node.position.set(cx, 0, cz);
+      node.rotation.y = Math.random() * Math.PI * 2;
+      const tiltDeg = () => (Math.random() < 0.5 ? 1 : -1) * (2 + Math.random() * 3) * Math.PI / 180;
+      if (Math.random() < 0.45) node.rotation.x = tiltDeg();
+      if (Math.random() < 0.45) node.rotation.z = tiltDeg();
+      this.trackNode(node);
+      const { collision, props } = buildDesk(scene, node, `${this.id}_d${d}`);
+      collision.forEach(m => this.track(m));
+      props.forEach(m => this.prop(m));
     }
   }
 

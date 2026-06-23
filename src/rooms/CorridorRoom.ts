@@ -108,7 +108,7 @@ export class CorridorRoom extends RoomBase {
     ceilMat.bumpTexture.level = 0.35;
 
     const ceil = MeshBuilder.CreateBox(`${this.id}_ceil`,
-      { width: W, height: T, depth: D }, scene);
+      { width: W - 0.002, height: T, depth: D - 0.002 }, scene);
     ceil.position.y = H + T / 2;
     ceil.material   = ceilMat;
     this.track(ceil);
@@ -160,13 +160,13 @@ export class CorridorRoom extends RoomBase {
       this.track(plane);
 
       const bs = MeshBuilder.CreateBox(`${this.id}_bs_${panelId}`,
-        { width: BS_D, height: BS_H, depth: panelLen }, scene);
+        { width: BS_D, height: BS_H, depth: panelLen - 0.002 }, scene);
       bs.position = new Vector3(bsX, BS_H / 2, cz);
       bs.material = bsMat;
       this.prop(bs);
 
       const corn = MeshBuilder.CreateBox(`${this.id}_corn_${panelId}`,
-        { width: CORN_D, height: CORN_H, depth: panelLen }, scene);
+        { width: CORN_D, height: CORN_H, depth: panelLen - 0.002 }, scene);
       corn.position = new Vector3(cornX, H - CORN_H / 2, cz);
       corn.material = cornMat;
       this.prop(corn);

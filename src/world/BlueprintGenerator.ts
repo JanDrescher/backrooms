@@ -93,8 +93,9 @@ const CORR_DEPTHS:  readonly number[] = [9, 9, 9, 12, 12, 15];  // 3–5 Chunks
 // Fallback-Größen für Sackgassen wenn große Räume nicht passen
 const FALLBACK_SIZES: readonly [number, number][] = [[3, 6], [6, 3], [3, 3]];
 
-const MAX_ROOMS = 35;
-const MIN_ROOMS = 10;
+const MAX_ROOMS          = 35;
+const MIN_ROOMS          = 10;
+const MIN_PLACEHOLDER_ROOMS = 8;
 
 // ── Generator ─────────────────────────────────────────────────────────────────
 
@@ -244,6 +245,11 @@ function tryGenerate(): LevelData {
 
 export function generateLevelFromBlueprint(_level: number): LevelData {
   let result: LevelData;
-  do { result = tryGenerate(); } while (result.rooms.length < MIN_ROOMS);
+  do {
+    result = tryGenerate();
+  } while (
+    result.rooms.length < MIN_ROOMS ||
+    result.rooms.filter(pr => pr.room instanceof PlaceholderRoom).length < MIN_PLACEHOLDER_ROOMS
+  );
   return result;
 }
