@@ -94,7 +94,7 @@ const CORR_DEPTHS:  readonly number[] = [9, 9, 9, 12, 12, 15];  // 3–5 Chunks
 const FALLBACK_SIZES: readonly [number, number][] = [[3, 6], [6, 3], [3, 3]];
 
 const MAX_ROOMS = 35;
-const MIN_ROOMS = 5;
+const MIN_ROOMS = 10;
 
 // ── Generator ─────────────────────────────────────────────────────────────────
 
