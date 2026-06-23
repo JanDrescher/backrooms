@@ -17,40 +17,36 @@ function handleClick(ctx: AudioContext, out: AudioNode, t: number): void {
   bpf.type = "bandpass"; bpf.frequency.value = 2800; bpf.Q.value = 3.5;
 
   const g = ctx.createGain();
-  g.gain.setValueAtTime(0.85, t);
+  g.gain.setValueAtTime(1.3, t);
   g.gain.exponentialRampToValueAtTime(0.001, t + 0.025);
 
   src.connect(bpf); bpf.connect(g); g.connect(out);
   src.start(t);
 }
 
-// Klacken des Türriegels am Schließblech — metallisch
+// Dumpfes Einrasten der Tür im Rahmen — Körperschall, kein Ton
 function frameImpact(ctx: AudioContext, out: AudioNode, t: number): void {
-  // Zwei leicht verstimmte Sinustöne → metallisches Nachklingen (kein Sweep)
-  for (const [freq, amp, decay] of [
-    [920,  0.22, 0.045],
-    [1280, 0.18, 0.038],
-  ] as [number, number, number][]) {
-    const osc = ctx.createOscillator();
-    osc.type = "sine";
-    osc.frequency.value = freq;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(amp, t);
-    g.gain.exponentialRampToValueAtTime(0.001, t + decay);
-    osc.connect(g); g.connect(out);
-    osc.start(t); osc.stop(t + decay + 0.005);
-  }
+  // Tieffrequenter Wums (Tür trifft Rahmen)
+  const thud = ctx.createBufferSource();
+  thud.buffer = noiseBuffer(ctx, 0.07);
+  const bpf = ctx.createBiquadFilter();
+  bpf.type = "bandpass"; bpf.frequency.value = 160; bpf.Q.value = 1.2;
+  const tg = ctx.createGain();
+  tg.gain.setValueAtTime(0.55, t);
+  tg.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+  thud.connect(bpf); bpf.connect(tg); tg.connect(out);
+  thud.start(t);
 
   // Kurzer Hochfrequenz-Transient für den Aufprallmoment
-  const src  = ctx.createBufferSource();
-  src.buffer = noiseBuffer(ctx, 0.016);
-  const hpf  = ctx.createBiquadFilter();
+  const snap = ctx.createBufferSource();
+  snap.buffer = noiseBuffer(ctx, 0.014);
+  const hpf = ctx.createBiquadFilter();
   hpf.type = "highpass"; hpf.frequency.value = 3500;
-  const ng = ctx.createGain();
-  ng.gain.setValueAtTime(0.4, t);
-  ng.gain.exponentialRampToValueAtTime(0.001, t + 0.016);
-  src.connect(hpf); hpf.connect(ng); ng.connect(out);
-  src.start(t);
+  const sg = ctx.createGain();
+  sg.gain.setValueAtTime(0.45, t);
+  sg.gain.exponentialRampToValueAtTime(0.001, t + 0.014);
+  snap.connect(hpf); hpf.connect(sg); sg.connect(out);
+  snap.start(t);
 }
 
 export function playDoorSound(x: number, y: number, z: number): void {
@@ -61,7 +57,7 @@ export function playDoorSound(x: number, y: number, z: number): void {
   panner.distanceModel   = "inverse";
   panner.refDistance     = 1.0;
   panner.maxDistance     = 18;
-  panner.rolloffFactor   = 2.0;
+  panner.rolloffFactor   = 1.4;
   panner.positionX.value = x;
   panner.positionY.value = y;
   panner.positionZ.value = z;
@@ -69,7 +65,7 @@ export function playDoorSound(x: number, y: number, z: number): void {
 
   const now = ctx.currentTime;
   handleClick(ctx, panner, now);
-  // frameImpact(ctx, panner, now + 0.10);
+  frameImpact(ctx, panner, now + 0.10);
 
   setTimeout(() => panner.disconnect(), 400);
 }
