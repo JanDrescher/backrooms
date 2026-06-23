@@ -22,21 +22,21 @@ function buildCarpetTexture(scene: Scene): DynamicTexture {
   const ctx  = tex.getContext() as CanvasRenderingContext2D;
   const cols = SIZE / TILE;
 
-  ctx.fillStyle = "#989460";
+  ctx.fillStyle = "#b8b49c";
   ctx.fillRect(0, 0, SIZE, SIZE);
 
   for (let i = 0; i < cols; i++) {
     for (let j = 0; j < cols; j++) {
       const x = i * TILE, y = j * TILE;
-      ctx.fillStyle = (i + j) % 2 === 0 ? "#a29e6a" : "#8c8858";
+      ctx.fillStyle = (i + j) % 2 === 0 ? "#c2bea6" : "#aeaa94";
       ctx.fillRect(x + 1, y + 1, TILE - 2, TILE - 2);
       const cx = x + TILE / 2, cy = y + TILE / 2, r = TILE * 0.30;
-      ctx.fillStyle = "#a09c64";
+      ctx.fillStyle = "#bcb8a0";
       ctx.beginPath();
       ctx.moveTo(cx, cy - r); ctx.lineTo(cx + r, cy);
       ctx.lineTo(cx, cy + r); ctx.lineTo(cx - r, cy);
       ctx.closePath(); ctx.fill();
-      ctx.fillStyle = "#747060";
+      ctx.fillStyle = "#9a9890";
       ctx.beginPath();
       ctx.arc(cx, cy, r * 0.35, 0, Math.PI * 2);
       ctx.fill();
