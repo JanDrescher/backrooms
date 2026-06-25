@@ -1,5 +1,7 @@
 import { Mesh, MeshBuilder, StandardMaterial, DynamicTexture, PointLight, Color3, Vector3, Animation, TransformNode, type Scene } from "@babylonjs/core";
 import { buildDesk } from "../furniture/Desk";
+import { buildChair } from "../furniture/Chair";
+import { buildCabinet, CABINET_D } from "../furniture/Cabinet";
 import { RoomBase } from "./RoomBase";
 import type { DoorDefinition } from "./IRoom";
 import { playDoorSound } from "../audio/DoorSound";
@@ -636,7 +638,6 @@ export class PlaceholderRoom extends RoomBase {
   }
 
   private buildFurniture(scene: Scene): void {
-    if (Math.random() > 0.80) return;
     const { W, D, doorWall, doorOff } = this;
     const chunksX     = W / 3;
     const chunksZ     = D / 3;
@@ -654,40 +655,136 @@ export class PlaceholderRoom extends RoomBase {
     }
     const isDoor = (i: number, k: number) => i === doorIx && k === doorIz;
 
-    // Kandidaten-Chunks sammeln
-    const candidates: [number, number][] = [];
-    for (let i = 0; i < chunksX; i++)
-      for (let k = 0; k < chunksZ; k++)
-        if (!isDoor(i, k) && (chunksX <= 2 && chunksZ <= 2
-            || i === 0 || i === chunksX - 1 || k === 0 || k === chunksZ - 1))
-          candidates.push([i, k]);
+    const shuffle = <T>(arr: T[]): T[] => {
+      for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
+      }
+      return arr;
+    };
 
-    if (candidates.length === 0) return;
+    // ── Desks (Rand-Chunks bei großen Räumen) ───────────────────────────────
+    if (Math.random() < 0.65) {
+      const deskCands: [number, number][] = [];
+      for (let i = 0; i < chunksX; i++)
+        for (let k = 0; k < chunksZ; k++)
+          if (!isDoor(i, k) && (chunksX <= 2 && chunksZ <= 2
+              || i === 0 || i === chunksX - 1 || k === 0 || k === chunksZ - 1))
+            deskCands.push([i, k]);
+      shuffle(deskCands);
 
-    // Shuffle
-    for (let i = candidates.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
+      const maxDesks  = Math.min(3, Math.max(1, Math.round(totalChunks / 4)));
+      const deskCount = Math.min(deskCands.length, 1 + Math.floor(Math.random() * maxDesks));
+      const tiltDeg   = () => (Math.random() < 0.5 ? 1 : -1) * (2 + Math.random() * 3) * Math.PI / 180;
+
+      for (let d = 0; d < deskCount; d++) {
+        const [ix, iz] = deskCands[d];
+        const cx = -W / 2 + 1.5 + ix * 3 + (Math.random() - 0.5) * 1.0;
+        const cz = -D / 2 + 1.5 + iz * 3 + (Math.random() - 0.5) * 1.0;
+        const node = new TransformNode(`${this.id}_desk_${d}`, scene);
+        node.position.set(cx, 0, cz);
+        node.rotation.y = Math.random() * Math.PI * 2;
+        if (Math.random() < 0.45) node.rotation.x = tiltDeg();
+        if (Math.random() < 0.45) node.rotation.z = tiltDeg();
+        this.trackNode(node);
+        const { collision, props } = buildDesk(scene, node, `${this.id}_d${d}`);
+        collision.forEach(m => this.track(m));
+        props.forEach(m => this.prop(m));
+      }
     }
 
-    // Anzahl: 1 für kleine Räume, bis 3 für große
-    const maxDesks = Math.min(3, Math.max(1, Math.round(totalChunks / 4)));
-    const count    = Math.min(candidates.length, 1 + Math.floor(Math.random() * maxDesks));
+    // ── Stühle (alle Nicht-Tür-Chunks, unabhängig von Desks) ────────────────
+    if (Math.random() < 0.72) {
+      const chairCands: [number, number][] = [];
+      for (let i = 0; i < chunksX; i++)
+        for (let k = 0; k < chunksZ; k++)
+          if (!isDoor(i, k))
+            chairCands.push([i, k]);
+      shuffle(chairCands);
 
-    for (let d = 0; d < count; d++) {
-      const [ix, iz] = candidates[d];
-      const cx = -W / 2 + 1.5 + ix * 3 + (Math.random() - 0.5) * 1.0;
-      const cz = -D / 2 + 1.5 + iz * 3 + (Math.random() - 0.5) * 1.0;
-      const node = new TransformNode(`${this.id}_desk_${d}`, scene);
-      node.position.set(cx, 0, cz);
-      node.rotation.y = Math.random() * Math.PI * 2;
-      const tiltDeg = () => (Math.random() < 0.5 ? 1 : -1) * (2 + Math.random() * 3) * Math.PI / 180;
-      if (Math.random() < 0.45) node.rotation.x = tiltDeg();
-      if (Math.random() < 0.45) node.rotation.z = tiltDeg();
-      this.trackNode(node);
-      const { collision, props } = buildDesk(scene, node, `${this.id}_d${d}`);
-      collision.forEach(m => this.track(m));
-      props.forEach(m => this.prop(m));
+      const maxChairs  = Math.min(6, Math.max(1, Math.round(totalChunks / 2)));
+      const chairCount = Math.min(chairCands.length, 1 + Math.floor(Math.random() * maxChairs));
+
+      for (let c = 0; c < chairCount; c++) {
+        const [ix, iz] = chairCands[c];
+        const cx = -W / 2 + 1.5 + ix * 3 + (Math.random() - 0.5) * 1.5;
+        const cz = -D / 2 + 1.5 + iz * 3 + (Math.random() - 0.5) * 1.5;
+
+        const chairNode = new TransformNode(`${this.id}_chair_${c}`, scene);
+        chairNode.rotation.y = Math.random() * Math.PI * 2;
+
+        const tipRoll = Math.random();
+        if (tipRoll < 0.50) {
+          // Kaum merklich schräg — wie achtlos weggeschoben
+          const td = () => (Math.random() < 0.5 ? 1 : -1) * (1 + Math.random() * 5) * Math.PI / 180;
+          if (Math.random() < 0.6) chairNode.rotation.x = td();
+          if (Math.random() < 0.6) chairNode.rotation.z = td();
+          chairNode.position.set(cx, 0, cz);
+        } else if (tipRoll < 0.82) {
+          // Leicht geneigt, ein paar mm eingesunken
+          const axis = Math.random() < 0.5 ? 'x' : 'z' as 'x' | 'z';
+          chairNode.rotation[axis] = (Math.random() < 0.5 ? 1 : -1) * (7 + Math.random() * 12) * Math.PI / 180;
+          chairNode.position.set(cx, -(0.01 + Math.random() * 0.02), cz);
+        } else {
+          // Spürbar schräg, knapp 1–4 cm eingesunken
+          const axis = Math.random() < 0.5 ? 'x' : 'z' as 'x' | 'z';
+          chairNode.rotation[axis] = (Math.random() < 0.5 ? 1 : -1) * (18 + Math.random() * 14) * Math.PI / 180;
+          chairNode.position.set(cx, -(0.02 + Math.random() * 0.04), cz);
+        }
+
+        this.trackNode(chairNode);
+        const { collision: cc, props: cp } = buildChair(scene, chairNode, `${this.id}_c${c}`);
+        cc.forEach(m => this.track(m));
+        cp.forEach(m => this.prop(m));
+      }
+    }
+
+    // ── Schränke (seltener als Desks, immer an Wand, immer aufrecht) ─────────
+    if (Math.random() < 0.38) {
+      // fixedAxis/fixedPos: Schrankmitte direkt auf Wandposition gesetzt (kein cos/sin-Fehler)
+      const snug = CABINET_D / 2 + 0.02; // Abstand Schrankmitte zur Wandfläche
+      type WallSlot = { ix: number; iz: number; wallRotY: number; fixedAxis: 'x' | 'z'; fixedPos: number };
+      const cabCands: WallSlot[] = [];
+      for (let i = 0; i < chunksX; i++) {
+        for (let k = 0; k < chunksZ; k++) {
+          if (isDoor(i, k)) continue;
+          // wallRotY: Rotation des Schranks so dass Front (−Z lokal) zur Raummitte zeigt
+          if (k === chunksZ - 1) cabCands.push({ ix: i, iz: k, wallRotY: 0,             fixedAxis: 'z', fixedPos:  D / 2 - snug }); // Nord
+          if (k === 0)           cabCands.push({ ix: i, iz: k, wallRotY: Math.PI,        fixedAxis: 'z', fixedPos: -D / 2 + snug }); // Süd
+          if (i === chunksX - 1) cabCands.push({ ix: i, iz: k, wallRotY: -Math.PI / 2,  fixedAxis: 'x', fixedPos:  W / 2 - snug }); // Ost
+          if (i === 0)           cabCands.push({ ix: i, iz: k, wallRotY:  Math.PI / 2,   fixedAxis: 'x', fixedPos: -W / 2 + snug }); // West
+        }
+      }
+      shuffle(cabCands);
+
+      const maxCabs  = Math.min(2, Math.max(1, Math.floor(totalChunks / 6)));
+      const cabCount = Math.min(cabCands.length, maxCabs);
+
+      for (let cab = 0; cab < cabCount; cab++) {
+        const { ix, iz, wallRotY, fixedAxis, fixedPos } = cabCands[cab];
+
+        // Lateraler Jitter entlang der Wand, senkrechte Achse exakt auf Wandposition fixiert
+        const jitter = (Math.random() - 0.5) * 1.6;
+        const cabX   = fixedAxis === 'x' ? fixedPos : -W / 2 + 1.5 + ix * 3 + jitter;
+        const cabZ   = fixedAxis === 'z' ? fixedPos : -D / 2 + 1.5 + iz * 3 + jitter;
+
+        const cabNode = new TransformNode(`${this.id}_cab_${cab}`, scene);
+        cabNode.rotation.y = wallRotY + (Math.random() - 0.5) * 0.18; // ±~10° Variation
+
+        if (Math.random() < 0.30) {
+          // Leicht schräg + ~2 % der Höhe eingesunken
+          const axis = Math.random() < 0.5 ? 'x' : 'z' as 'x' | 'z';
+          cabNode.rotation[axis] = (Math.random() < 0.5 ? 1 : -1) * (1 + Math.random() * 2) * Math.PI / 180;
+          cabNode.position.set(cabX, -(0.01 + Math.random() * 0.02), cabZ);
+        } else {
+          cabNode.position.set(cabX, 0, cabZ);
+        }
+
+        this.trackNode(cabNode);
+        const { collision: bc, props: bp } = buildCabinet(scene, cabNode, `${this.id}_cab${cab}`);
+        bc.forEach(m => this.track(m));
+        bp.forEach(m => this.prop(m));
+      }
     }
   }
 
